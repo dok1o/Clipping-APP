@@ -18,3 +18,4 @@
 - 2026-08-25 — Синхронизирована проектная документация перед стартом Этапа 0: структура `backend/app/`, naming, правила `PROGRESS.md`, Stage 1 pipeline и базовые доменные сущности. Следующий шаг: старт Этапа 0.
 - 2026-08-25 — Stage 0.1 завершён: создан repository skeleton и минимальный FastAPI backend с `/health`; тест health endpoint проходит. Следующий шаг: Stage 0.2 database foundation.
 - 2026-08-25 — Stage 0.2 завершён: создан SQLAlchemy foundation для core domain entities, DATABASE_URL вынесен в окружение, model metadata/FK тесты проходят без PostgreSQL. Следующий шаг: Stage 0.3 — Alembic.
+- 2026-08-25 — Stage 0.3 завершён: Alembic подключён к существующей SQLAlchemy metadata, создана первая revision для core domain tables, offline SQL generation и тесты проходят. Следующий шаг: Stage 0.4 — Redis/Celery skeleton.
