@@ -20,3 +20,4 @@
 - 2026-08-25 — Stage 0.2 завершён: создан SQLAlchemy foundation для core domain entities, DATABASE_URL вынесен в окружение, model metadata/FK тесты проходят без PostgreSQL. Следующий шаг: Stage 0.3 — Alembic.
 - 2026-08-25 — Stage 0.3 завершён: Alembic подключён к существующей SQLAlchemy metadata, создана первая revision для core domain tables, offline SQL generation и тесты проходят. Следующий шаг: Stage 0.4 — Redis/Celery skeleton.
 - 2026-08-25 — Stage 0.4 завершён: создан Celery foundation с Redis broker/backend через env, техническая health task зарегистрирована и проходит eager tests без Redis. Следующий шаг: Stage 0.5 — storage abstraction + MinIO config.
+- 2026-08-25 — Stage 0.5 завершён: создан S3-compatible storage abstraction на boto3 с env-конфигурацией для MinIO/S3, unit tests проходят без сети. Следующий шаг: Stage 0.6 — frontend skeleton.
