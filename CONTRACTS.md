@@ -143,6 +143,23 @@ AI clipping и text generation подключаются на следующих 
 - Ошибки: `404`, если видео не найдено
 - Статус: реализовано 2026-08-25
 
+### client → video-effects: `RenderClip`
+- Stage: Stage 1.3
+- Endpoint: `POST /clips/{clip_id}/render`
+- Вход: `clip_id`
+- Выход: `{ id, clip_id, storage_key, format, width, height, duration, created_at }`
+- Ошибки: `404`, если клип или source object не найден; controlled render error, если ffmpeg не смог создать output
+- Побочный эффект: source video читается через storage abstraction, rendered MP4 сохраняется через storage abstraction, создаётся `RenderedAsset`, `Clip.status` обновляется `rendering → rendered` или `failed`
+- Статус: реализовано 2026-08-25
+
+### client → video-effects: `ListRenderedAssets`
+- Stage: Stage 1.3
+- Endpoint: `GET /clips/{clip_id}/rendered-assets`
+- Вход: `clip_id`
+- Выход: `[{ id, clip_id, storage_key, format, width, height, duration, created_at }]`
+- Ошибки: `404`, если клип не найден
+- Статус: реализовано 2026-08-25
+
 ---
 
 ## Заготовки контрактов будущих AI/automation stages
