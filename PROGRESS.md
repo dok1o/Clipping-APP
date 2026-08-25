@@ -10,7 +10,7 @@
 ---
 
 ## Текущий этап
-`Этап 0 — Скелет` (в работе)
+`Stage 0 — Skeleton` (completed)
 
 ## Лог
 
@@ -22,3 +22,4 @@
 - 2026-08-25 — Stage 0.4 завершён: создан Celery foundation с Redis broker/backend через env, техническая health task зарегистрирована и проходит eager tests без Redis. Следующий шаг: Stage 0.5 — storage abstraction + MinIO config.
 - 2026-08-25 — Stage 0.5 завершён: создан S3-compatible storage abstraction на boto3 с env-конфигурацией для MinIO/S3, unit tests проходят без сети. Следующий шаг: Stage 0.6 — frontend skeleton.
 - 2026-08-25 — Stage 0.6 завершён: создан минимальный Vite React + Tailwind frontend skeleton, production build проходит, backend tests не сломаны. Следующий шаг: Stage 0 final audit / integration verification.
+- 2026-08-25 — Stage 0 завершён: skeleton, FastAPI, SQLAlchemy models, Alembic migration, Celery, S3 storage abstraction и React/Tailwind frontend verified. Следующий шаг: Stage 1 — MVP without AI.

@@ -60,6 +60,11 @@ backend/
 │   ├── infra/
 │   └── main.py
 ├── tests/
+├── alembic/
+│   ├── env.py
+│   ├── script.py.mako
+│   └── versions/
+└── alembic.ini
 frontend/        # React-дашборд
 storage/         # локальные видео и промежуточные файлы, не коммитить
 AGENTS.md
