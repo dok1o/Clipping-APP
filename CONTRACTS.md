@@ -2,7 +2,7 @@
 
 Интерфейсы между модулями: входы/выходы, форматы JSON, названия эндпоинтов/функций. Любая межмодульная задача сначала получает контракт здесь, потом реализацию. Worker и Manager другого модуля ориентируются на этот файл вместо чтения чужого кода.
 
-Статус: **черновик, ни один контракт не реализован**. Заполняется по мере прохождения Этапа 0.
+Статус: **рабочий черновик**. Реализованные контракты помечаются по мере прохождения этапов.
 
 В архитектурных описаниях допустимы названия `ai-clipping`, `text-gen`, `video-effects`, `analytics-learning`.
 Реальные Python package/directory names всегда: `ai_clipping`, `text_gen`, `video_effects`, `analytics_learning`.
@@ -96,6 +96,27 @@ manual video upload
 ```
 
 AI clipping и text generation подключаются на следующих стадиях.
+
+---
+
+## Stage 1 API contracts
+
+### client → ingestion: `UploadVideo`
+- Stage: Stage 1.1
+- Endpoint: `POST /videos`
+- Content-Type: `multipart/form-data`
+- Вход: поле `file` с одним локально загруженным видеофайлом
+- Выход: `{ id, original_filename, status, created_at }`
+- Ошибки: отсутствует файл / пустой файл / неподдерживаемый media type или расширение / превышен configurable upload size limit
+- Статус: реализовано 2026-08-25
+
+### client → ingestion: `GetVideo`
+- Stage: Stage 1.1
+- Endpoint: `GET /videos/{video_id}`
+- Вход: `video_id`
+- Выход: `{ id, original_filename, status, created_at }`
+- Ошибки: `404`, если видео не найдено
+- Статус: реализовано 2026-08-25
 
 ---
 

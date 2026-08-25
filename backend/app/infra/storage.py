@@ -17,6 +17,13 @@ class ObjectStorage:
     def upload_file(self, file_path: str | Path, object_key: str) -> None:
         self.client.upload_file(str(file_path), self.bucket_name, object_key)
 
+    def upload_fileobj(self, fileobj: Any, object_key: str, content_type: str | None = None) -> None:
+        extra_args = {"ContentType": content_type} if content_type is not None else None
+        if extra_args is None:
+            self.client.upload_fileobj(fileobj, self.bucket_name, object_key)
+        else:
+            self.client.upload_fileobj(fileobj, self.bucket_name, object_key, ExtraArgs=extra_args)
+
     def put_object(self, object_key: str, data: bytes, content_type: str | None = None) -> None:
         kwargs: dict[str, Any] = {
             "Bucket": self.bucket_name,
@@ -66,3 +73,7 @@ def create_object_storage(settings: S3Settings | None = None) -> ObjectStorage:
         client=create_s3_client(s3_settings),
         bucket_name=s3_settings.s3_bucket_name,
     )
+
+
+def get_object_storage() -> ObjectStorage:
+    return create_object_storage()

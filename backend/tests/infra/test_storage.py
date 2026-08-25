@@ -77,6 +77,7 @@ def test_object_storage_methods_delegate_to_client() -> None:
     storage = ObjectStorage(client=client, bucket_name="clips")
 
     storage.upload_file(Path("video.mp4"), "raw/video.mp4")
+    storage.upload_fileobj(BytesIO(b"video"), "raw/stream.mp4", content_type="video/mp4")
     storage.put_object("raw/data.txt", b"hello", content_type="text/plain")
     storage.download_file("raw/video.mp4", Path("downloaded.mp4"))
     assert storage.read_object("raw/data.txt") == b"hello"
@@ -85,6 +86,7 @@ def test_object_storage_methods_delegate_to_client() -> None:
 
     assert client.calls == [
         ("upload_file", "video.mp4", "clips", "raw/video.mp4"),
+        ("upload_fileobj", "clips", "raw/stream.mp4", "video/mp4"),
         ("put_object", "clips", "raw/data.txt", b"hello", "text/plain"),
         ("download_file", "clips", "raw/video.mp4", "downloaded.mp4"),
         ("get_object", "clips", "raw/data.txt"),
@@ -105,6 +107,9 @@ class FakeS3Client:
 
     def upload_file(self, file_path, bucket, key) -> None:
         self.calls.append(("upload_file", file_path, bucket, key))
+
+    def upload_fileobj(self, fileobj, bucket, key, ExtraArgs=None) -> None:
+        self.calls.append(("upload_fileobj", bucket, key, ExtraArgs["ContentType"]))
 
     def put_object(self, Bucket, Key, Body, ContentType=None) -> None:
         self.calls.append(("put_object", Bucket, Key, Body, ContentType))

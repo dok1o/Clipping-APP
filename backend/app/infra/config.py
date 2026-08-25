@@ -36,3 +36,18 @@ def get_settings() -> Settings:
 @lru_cache
 def get_s3_settings() -> S3Settings:
     return S3Settings()
+
+
+class UploadSettings(BaseSettings):
+    video_upload_max_bytes: int = 100 * 1024 * 1024
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+
+@lru_cache
+def get_upload_settings() -> UploadSettings:
+    return UploadSettings()
