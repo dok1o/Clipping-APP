@@ -15,6 +15,7 @@ storage/
 *.webm
 
 node_modules/
+.npm-cache/
 dist/
 .idea/
 .vscode/
