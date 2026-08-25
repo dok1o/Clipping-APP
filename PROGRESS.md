@@ -24,3 +24,4 @@
 - 2026-08-25 — Stage 0.6 завершён: создан минимальный Vite React + Tailwind frontend skeleton, production build проходит, backend tests не сломаны. Следующий шаг: Stage 0 final audit / integration verification.
 - 2026-08-25 — Stage 0 завершён: skeleton, FastAPI, SQLAlchemy models, Alembic migration, Celery, S3 storage abstraction и React/Tailwind frontend verified. Следующий шаг: Stage 1 — MVP without AI.
 - 2026-08-25 — Stage 1.1 завершён: реализован manual video upload через `POST /videos`, Video record создаётся через DB session, файл проходит через storage abstraction, `GET /videos/{id}` и backend tests проходят. Следующий шаг: Stage 1.2 — manual clip creation by timestamps.
+- 2026-08-25 — Stage 1.2 завершён: реализовано ручное создание Clip по timestamps через `POST /videos/{video_id}/clips`, metadata endpoints `GET /clips/{clip_id}` и `GET /videos/{video_id}/clips`, backend tests проходят. Следующий шаг: Stage 1.3 — vertical render with ffmpeg.

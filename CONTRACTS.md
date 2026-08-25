@@ -118,6 +118,31 @@ AI clipping и text generation подключаются на следующих 
 - Ошибки: `404`, если видео не найдено
 - Статус: реализовано 2026-08-25
 
+### client → ingestion: `CreateManualClip`
+- Stage: Stage 1.2
+- Endpoint: `POST /videos/{video_id}/clips`
+- Content-Type: `application/json`
+- Вход: `{ start: number, end: number }`
+- Выход: `{ id, video_id, start, end, status, created_at }`
+- Ошибки: `404`, если видео не найдено; validation error, если `start < 0` или `end <= start`
+- Статус: реализовано 2026-08-25
+
+### client → ingestion: `GetClip`
+- Stage: Stage 1.2
+- Endpoint: `GET /clips/{clip_id}`
+- Вход: `clip_id`
+- Выход: `{ id, video_id, start, end, status, created_at }`
+- Ошибки: `404`, если клип не найден
+- Статус: реализовано 2026-08-25
+
+### client → ingestion: `ListVideoClips`
+- Stage: Stage 1.2
+- Endpoint: `GET /videos/{video_id}/clips`
+- Вход: `video_id`
+- Выход: `[{ id, video_id, start, end, status, created_at }]`
+- Ошибки: `404`, если видео не найдено
+- Статус: реализовано 2026-08-25
+
 ---
 
 ## Заготовки контрактов будущих AI/automation stages

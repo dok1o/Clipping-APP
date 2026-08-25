@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import PurePath
 from uuid import UUID, uuid4
 
@@ -9,15 +10,17 @@ from sqlalchemy.orm import Session
 
 from app.infra.config import UploadSettings, get_upload_settings
 from app.infra.database import get_session
-from app.infra.models import Video
+from app.infra.models import Clip, Video
 from app.infra.storage import ObjectStorage, get_object_storage
-from app.ingestion.schemas import VideoResponse
+from app.ingestion.schemas import ClipCreate, ClipResponse, VideoResponse
 
 
 router = APIRouter(prefix="/videos", tags=["videos"])
+clip_router = APIRouter(prefix="/clips", tags=["clips"])
 
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm"}
 VIDEO_CREATED_STATUS = "uploaded"
+CLIP_CREATED_STATUS = "created"
 
 
 @router.post("", response_model=VideoResponse, status_code=status.HTTP_201_CREATED)
@@ -57,10 +60,44 @@ def upload_video(
 
 @router.get("/{video_id}", response_model=VideoResponse)
 def get_video(video_id: UUID, session: Session = Depends(get_session)) -> Video:
-    video = session.get(Video, video_id)
-    if video is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found")
-    return video
+    return _get_video_or_404(video_id, session)
+
+
+@router.post("/{video_id}/clips", response_model=ClipResponse, status_code=status.HTTP_201_CREATED)
+def create_clip(video_id: UUID, payload: ClipCreate, session: Session = Depends(get_session)) -> Clip:
+    _get_video_or_404(video_id, session)
+    clip = Clip(
+        id=uuid4(),
+        video_id=video_id,
+        start=Decimal(str(payload.start)),
+        end=Decimal(str(payload.end)),
+        status=CLIP_CREATED_STATUS,
+        created_at=datetime.now(UTC),
+    )
+
+    try:
+        session.add(clip)
+        session.commit()
+        session.refresh(clip)
+    except Exception:
+        session.rollback()
+        raise
+
+    return clip
+
+
+@router.get("/{video_id}/clips", response_model=list[ClipResponse])
+def list_video_clips(video_id: UUID, session: Session = Depends(get_session)) -> list[Clip]:
+    video = _get_video_or_404(video_id, session)
+    return list(video.clips)
+
+
+@clip_router.get("/{clip_id}", response_model=ClipResponse)
+def get_clip(clip_id: UUID, session: Session = Depends(get_session)) -> Clip:
+    clip = session.get(Clip, clip_id)
+    if clip is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Clip not found")
+    return clip
 
 
 def _validate_upload(file: UploadFile, max_bytes: int) -> None:
@@ -84,3 +121,10 @@ def _validate_upload(file: UploadFile, max_bytes: int) -> None:
 def _safe_filename(filename: str) -> str:
     name = PurePath(filename).name
     return name or "video"
+
+
+def _get_video_or_404(video_id: UUID, session: Session) -> Video:
+    video = session.get(Video, video_id)
+    if video is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video not found")
+    return video
