@@ -86,6 +86,61 @@ class TikTokMetricsAdapter:
         }
 
 
+class YouTubeMetricsAdapter:
+    """YouTube Data API v3 videos.list?part=statistics (KNOWLEDGE §6, 2026-09-21).
+
+    Official counters: viewCount/likeCount/commentCount (strings). YouTube has
+    no share counter — shares stays None. Token via the shared Google-auth
+    resolver (direct access_token or refresh_token flow).
+    """
+
+    platform = "youtube"
+
+    def __init__(self, base_url: str = "https://www.googleapis.com", transport=None) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.transport = transport
+
+    def fetch(self, external_post_id: str, credentials: dict) -> dict:
+        from app.services.publish.youtube import resolve_access_token
+
+        token = resolve_access_token(credentials, transport=self.transport)
+        try:
+            with httpx.Client(timeout=30, transport=self.transport) as client:
+                response = client.get(
+                    f"{self.base_url}/youtube/v3/videos",
+                    params={"part": "statistics", "id": external_post_id},
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+        except httpx.HTTPError as exc:
+            raise MetricsError("network_error", f"YouTube metrics request failed: {exc}") from exc
+        try:
+            body = response.json()
+        except ValueError:
+            raise MetricsError("invalid_response", f"non-JSON response HTTP {response.status_code}") from None
+        if response.status_code != 200:
+            error = body.get("error") or {}
+            raise MetricsError(
+                f"http_{response.status_code}",
+                (error.get("message") or "youtube metrics query failed")[:200],
+            )
+        items = body.get("items") or []
+        if not items:
+            raise MetricsError("video_not_found", f"YouTube returned no video for id {external_post_id}")
+        stats = items[0].get("statistics") or {}
+
+        def _count(key: str) -> int | None:
+            value = stats.get(key)
+            return int(value) if isinstance(value, str) and value.isdigit() else None
+
+        return {
+            "views": _count("viewCount"),
+            "likes": _count("likeCount"),
+            "comments": _count("commentCount"),
+            "shares": None,  # not exposed by the official API
+            "raw": body,
+        }
+
+
 _ADAPTERS: dict[str, type] = {}
 
 
@@ -95,6 +150,7 @@ def register_adapter(cls):
 
 
 register_adapter(TikTokMetricsAdapter)
+register_adapter(YouTubeMetricsAdapter)
 
 
 def get_metrics_adapter(platform: str, **kwargs) -> MetricsAdapter:

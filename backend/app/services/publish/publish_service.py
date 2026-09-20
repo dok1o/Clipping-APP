@@ -26,7 +26,7 @@ from app.models.platform_account import PlatformAccount
 from app.models.publication import Publication, PublicationStatus
 from app.models.rendered_asset import RenderedAsset, RenderedAssetStatus
 from app.services.publish.base import PlatformError, PublishRequest
-from app.services.publish.tiktok import get_publisher
+from app.services.publish.base import get_publisher
 
 logger = get_logger(__name__)
 

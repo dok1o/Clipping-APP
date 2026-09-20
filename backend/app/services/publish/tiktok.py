@@ -192,19 +192,10 @@ class TikTokPublisher:
 
 # --- registry (extension point for the second platform) ---
 
-_PUBLISHERS: dict[str, type] = {}
-
-
-def register_publisher(cls: type) -> type:
-    _PUBLISHERS[cls.platform] = cls
-    return cls
+from app.services.publish.base import register_publisher  # noqa: E402  (registry moved to base)
 
 
 register_publisher(TikTokPublisher)
 
 
-def get_publisher(platform: str, **kwargs) -> "TikTokPublisher":
-    cls = _PUBLISHERS.get(platform)
-    if cls is None:
-        raise PlatformError("unsupported_platform", f"No publisher for platform '{platform}'")
-    return cls(**kwargs)
+from app.services.publish.base import get_publisher as get_publisher  # re-export (compat)

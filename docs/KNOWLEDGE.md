@@ -59,3 +59,13 @@
 - Статусы БД — varchar+CHECK (ADR-003), типы переносимые PG/SQLite (ADR-002).
 - Celery eager по умолчанию при APP_ENV=test (ADR-013).
 - Presigned-URL 900 сек на скачивание рендеров (CONTRACTS §4.9).
+
+
+## 6. YouTube Data API v3 (проверено по официальным докам 2026-09-21)
+
+- **Загрузка**: `POST https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status` — body `snippet{title≤100, description≤5000, tags (всего ≤500 символов), categoryId}` + `status{privacyStatus: public|unlisted|private, selfDeclaredMadeForKids}`. Ответ инициализации: `200` + заголовок `Location` (URL resumable-сессии); далее `PUT <Location>` с байтами видео (`Content-Type: video/mp4`) → `200/201` + ресурс video с `id`. Реализовано в `services/publish/youtube.py` (raw httpx, single-shot PUT на resumable-сессии — протокольно-корректно для наших размеров; ADR-017). Источники: https://developers.google.com/youtube/v3/docs/videos/insert , https://developers.google.com/youtube/v3/guides/uploading_a_video .
+- **OAuth2**: refresh-flow `POST https://oauth2.googleapis.com/token` (form: grant_type=refresh_token, refresh_token, client_id, client_secret). Прямой `access_token` в credentials тоже поддержан. Источник: https://developers.google.com/youtube/v3/guides/auth/server-side-web-apps .
+- **КВОТЫ (обновление 2026! Last updated 2026-09-15)**: у `videos.insert` СВОЙ бакет — **100 загрузок/день** (1 квота за вызов), у `search.list` — 100/день, прочие методы — суммарно 10 000 юнитов/день; сброс в полночь PT. Старые блоги про «1600 юнитов за загрузку» устарели. Есть сообщения о скрытом лимите 'Video Uploads per day' → HTTP 429 (googleapis/google-api-python-client#2753, май 2026). Источник: https://developers.google.com/youtube/v3/determine_quota_cost .
+- **Неверифицированные проекты**: загрузки через API из проектов без аудита (созданных после 2020-07-28) принудительно приватные — аналог TikTok unaudited. Источник: https://developers.google.com/youtube/v3/docs/videos/insert .
+- **Метрики**: `GET https://www.googleapis.com/youtube/v3/videos?part=statistics&id={id}` (1 юнит) → `items[].statistics{viewCount, likeCount, commentCount}` (строки); счётчика shares НЕТ (остаётся None). Реализовано `YouTubeMetricsAdapter`. Источники: https://developers.google.com/youtube/v3/docs/videos/list , https://developers.google.com/youtube/v3/docs/video .
+- **Shorts**: вертикальные видео ≤3 мин распознаются как Shorts автоматически, отдельного API-флага нет (официального эндпоинта «shorts» не существует).

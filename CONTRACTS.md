@@ -237,6 +237,11 @@
   - `POST /api/v1/videos/{id}/candidates` → `{items, total, ranked_by}` — `ranked_by: "ml"|"heuristic"`; при активной модели кандидаты переупорядочены по ML-score (features.ml_score), иначе эвристика.
   - Eval-гейт (§23): модель активируется ТОЛЬКО если val Spearman(ML) > Spearman(эвристики на тех же строках) и > 0; иначе run=rejected, работает эвристика. Модель старше ml_max_age_days → не активна. Никаких синтетических меток: датасет = published клипы (фичи promote) + последний Metric.
   - Beat: `self_train_check` каждые 6 ч — дообучение при ≥ ml_retrain_min_new_rows новых строк с прошлого прогона.
+- Stage 8 / YouTube (реализовано, вторая платформа по решению пользователя):
+  - Платформа `youtube` во всех platform-полях (Literal + ck constraint были заложены со Stage 0). Реестр publisher'ов перенесён в `publish/base.py` (`register_publisher`/`get_publisher`, ленивая загрузка адаптеров) — ядро publish_service не изменилось (§15).
+  - `YouTubePublisher`: официальный resumable-протокол videos.insert (init → Location → PUT байты); privacy 1:1 (public/unlisted/private — нативно); title≤100, description≤5000, tags≤500 символов; `resolve_access_token` — access_token или OAuth2 refresh (client_id/secret из credentials или настроек youtube_*).
+  - Метрики: `YouTubeMetricsAdapter` — videos.list part=statistics (views/likes/comments; shares=None — API не отдаёт).
+  - Ошибки: PlatformError с кодами missing_credentials/token_refresh_failed/upload_init_failed/upload_failed/video_not_found; в сообщениях только reason+message из Google error body (без секретов).
 - Stage 5 (реализовано):
   - `POST /api/v1/texts/generate` → **202** `{job_id, texts (могут быть пустыми до завершения job), captions_srt, platform}` — генерация исполняется Job'ом; результат — `GET /clips/{id}/texts`.
   - `POST /api/v1/jobs/reconcile` → `{reconciled: {retrying, failed}, requeued}` — ручной запуск восстановления застрявших Job (автоматически — при старте воркера, сигнал worker_ready: running/queued без прогресса > 15 мин → retrying (идемпотентные) / failed).

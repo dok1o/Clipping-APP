@@ -172,3 +172,47 @@ def test_sync_failure_records_job_error(client, monkeypatch) -> None:
     assert job["status"] == "failed"
     assert "network_error" in job["error_message"]
     assert client.get(f"/api/v1/publications/{pub['id']}/metrics").json()["total"] == 0
+
+
+def test_youtube_adapter_parses_statistics() -> None:
+    from app.services.analytics.metrics_service import YouTubeMetricsAdapter
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params.get("part") == "statistics"
+        assert request.url.params.get("id") == "dQw4w9WgXcQ"
+        return httpx.Response(200, json={
+            "items": [{"id": "dQw4w9WgXcQ", "statistics": {
+                "viewCount": "1543", "likeCount": "99", "commentCount": "12", "favoriteCount": "0",
+            }}],
+        })
+
+    adapter = YouTubeMetricsAdapter(base_url="https://api.test", transport=httpx.MockTransport(handler))
+    data = adapter.fetch("dQw4w9WgXcQ", {"access_token": "tok"})
+    assert data["views"] == 1543 and data["likes"] == 99 and data["comments"] == 12
+    assert data["shares"] is None  # YouTube official API has no share counter
+    assert data["raw"]["items"][0]["statistics"]["viewCount"] == "1543"
+
+
+def test_youtube_adapter_not_found() -> None:
+    from app.services.analytics.metrics_service import MetricsError, YouTubeMetricsAdapter
+
+    transport = httpx.MockTransport(lambda r: httpx.Response(200, json={"items": []}))
+    adapter = YouTubeMetricsAdapter(base_url="https://api.test", transport=transport)
+    with pytest.raises(MetricsError) as e:
+        adapter.fetch("gone", {"access_token": "tok"})
+    assert e.value.code == "video_not_found"
+
+
+def test_youtube_adapter_refreshes_token() -> None:
+    from app.services.analytics.metrics_service import YouTubeMetricsAdapter
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "oauth2.googleapis.com":
+            return httpx.Response(200, json={"access_token": "AT"})
+        assert request.headers.get("authorization") == "Bearer AT"
+        return httpx.Response(200, json={"items": [{"statistics": {"viewCount": "5"}}]})
+
+    adapter = YouTubeMetricsAdapter(base_url="https://www.googleapis.com",
+                                    transport=httpx.MockTransport(handler))
+    data = adapter.fetch("v1", {"refresh_token": "rt", "client_id": "cid", "client_secret": "cs"})
+    assert data["views"] == 5

@@ -245,3 +245,27 @@
 - **Stage gates**: Stage 0–7 все GATE: GO с отчётами §30 в этом файле.
 - **Коммиты по стадиям**: c37ab3e (S1) → 3513e2d (S2) → 944184b (S3) → d04bdfe (S4) → 24e32f3 (S5) → 0b49fd8 (S6) → настоящий (S7).
 - **Честные ограничения**: faster-whisper (нет egress до HF) — SKIP с mocked-проверкой и инструкцией; реальные платформенные ключи — controlled-fail пути проверены; Redis/Postgres/MinIO в песочнице — sqlite+moto+eager, на реальной машине через env.
+
+## Stage 8 — YouTube как вторая платформа (решение пользователя: TikTok сначала, YouTube потом)
+
+### T8.1 — YouTubePublisher (официальный resumable-протокол) — DONE (2026-09-21)
+- `services/publish/youtube.py`: videos.insert `uploadType=resumable` (init-POST с metadata → Location → PUT байты), `resolve_access_token` (прямой токен | OAuth2 refresh через oauth2.googleapis.com/token, client_id/secret из credentials или настроек), privacy 1:1, лимиты title/tags, `check_status` через videos.list part=status. Реестр publisher'ов перенесён из tiktok.py в `publish/base.py` (ленивая загрузка адаптеров) — publish_service не менялся, как требовал §15.
+- ADR-017: БЕЗ google-api-python-client (тяжёлая либа ради двух HTTP-вызовов); raw httpx, injectable transport для тестов.
+- Статус: DONE.
+
+### T8.2 — Тесты официального протокола — DONE (2026-09-21)
+- `tests/unit/test_youtube_publisher.py` (10): двухшаговый resumable (метаданные init + байты в сессию), refresh-flow (assert grant_type + единственный refresh), отсутствие refresh при прямом токене, truncation title≤100/tags≤500, invalid_privacy, Google-error reason в upload_init_failed/upload_failed, check_status-маппинг (uploaded/processed→published, rejected→failed, нет→video_not_found), сквозная публикация через сервис с РЕАЛЬНЫМ адаптером на MockTransport → Publication published, external_post_id.
+- `test_metrics.py` +3: YouTubeMetricsAdapter (statistics-парсинг строк→int, shares=None, not_found, refresh-токен в метриках).
+- Статус: DONE.
+
+### T8.3 — UI + документация — DONE (2026-09-21)
+- PublishPage: опция youtube в обоих селектах платформ (аккаунт + публикация). KNOWLEDGE §6: официальные URL (videos.insert, uploading guide, OAuth server-side, quota cost 2026-09-15, videos.list) + факты: НОВЫЕ квоты 2026 (videos.insert 100/день отдельным бакетом, не 1600 юнитов), неверифицированные проекты → принудительный private, скрытый 429 'Video Uploads per day'.
+- Статус: DONE.
+
+## Stage 8 — REPORT (2026-09-21)
+**Изменения**: полная вторая платформа YouTube (публикация + метрики) официальным API, без новых зависимостей и без изменения ядра publish_service.
+**Тесты**: полный suite **199 passed** (13 новых); frontend build+typecheck OK.
+**Блокеры**: реальные ключи Google OAuth — на машине пользователя (dry-путь покрыт MockTransport по официальному протоколу).
+**GATE: GO** — платформа добавлена адаптером + регистрацией, ядро не тронуто; протокол — строго официальный (KNOWLEDGE §6, даты проверок зафиксированы).
+
+---
