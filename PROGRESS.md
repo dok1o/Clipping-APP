@@ -155,3 +155,21 @@
 **GATE: GO** — цепочка transcribe→scenes→candidates→promote→render→texts проходится (моки+синтетика+реальный ffmpeg для сцен/рендера), эвристики без обучения, pytest зелёный.
 
 ---
+
+### T4.1–T4.3 — Dashboard — DONE (2026-09-20)
+- Файлы: frontend/src/api.ts (типизированный fetch-клиент: videos/clips/jobs/renders/candidates/texts/publications/platform-accounts + ApiError с detail.code + fmt-хелперы), pages/VideosPage.tsx (upload form, список, детали: транскрибирование с poll, AI-кандидаты top-5, promote), pages/ClipsPage.tsx (фильтр по видео, manual create 5–180с, render с poll статуса через jobs, download presigned, тексты YT/TT), pages/PublishPage.tsx (форма аккаунта с Fernet-токеном (password input), форма ручной публикации, таблица публикаций со статусами/ошибками), AnalyticsPage (заглушка Stage 6). vite.config: host 0.0.0.0 + allowedHosts + dev-прокси /api→8000.
+- Тесты: `npm run build` (tsc+vite) → OK; `npm run typecheck` → exit 0.
+- **Живая проверка (dev-серверы в песочнице, цикл через UI-прокси :5173)**: upload настоящего mp4 → 201 ready; manual clip → draft; render → job succeeded, asset 1080x1920 h264 aac ready 331912 bytes (реальный ffmpeg); texts (fake LLM) → заголовок+хэштеги; platform account → created (credentials «***»); publish без реальных ключей → контролируемый 502 platform_error, Publication failed + last_error (без падения). Dashboard доступен пользователю как live preview.
+- Статус: DONE.
+
+### T4.4 — Аудит Stage 4 — DONE (2026-09-20)
+- build/tsc зелёные; ручной чеклист (что видно): Videos — форма загрузки+таблица+детали с транскриптом/кандидатами; Clips — фильтр+создание+рендер+статусы+тексты+скачать; Publish — аккаунты+публикация+статусы; Analytics — заглушка Stage 6. Нет лендинга/маркетинговых элементов/лишних UI-либ (только react+router+tailwind). Backend регресс: **160 passed**.
+- Статус: DONE.
+
+## Stage 4 — REPORT (2026-09-20)
+**Изменения**: функциональный dashboard (3 страницы + заглушка Analytics), типизированный api.ts, live-проверка полного цикла.
+**Тесты**: npm build+typecheck OK; backend 160 passed; полный UI-цикл проверен на живых dev-серверах (uvicorn eager + moto S3 + vite) с реальным ffmpeg-рендером.
+**Блокеры**: browser-взаимодействие проверено curl'ом через тот же прокси, что использует браузер; визуальный осмотр — за пользователем (live preview).
+**GATE: GO**.
+
+---

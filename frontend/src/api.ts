@@ -30,26 +30,215 @@ async function parseError(response: Response): Promise<ApiError> {
   }
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
+async function apiGet<T>(path: string): Promise<T> {
   const response = await fetch(`${BASE_URL}${path}`);
   if (!response.ok) throw await parseError(response);
   return (await response.json()) as T;
 }
 
-export async function apiPost<T>(path: string, body: unknown): Promise<T> {
+async function apiPost<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(`${BASE_URL}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify(body ?? {}),
   });
   if (!response.ok) throw await parseError(response);
   return (await response.json()) as T;
 }
 
-export async function apiUpload<T>(path: string, file: File): Promise<T> {
+async function apiUpload<T>(path: string, file: File): Promise<T> {
   const form = new FormData();
   form.append("file", file);
   const response = await fetch(`${BASE_URL}${path}`, { method: "POST", body: form });
   if (!response.ok) throw await parseError(response);
   return (await response.json()) as T;
+}
+
+// ---------- domain types (backend CONTRACTS) ----------
+
+export interface Video {
+  id: string;
+  original_filename: string;
+  storage_key: string;
+  size_bytes: number;
+  mime_type: string;
+  duration_sec: number | null;
+  width: number | null;
+  height: number | null;
+  status: string;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Clip {
+  id: string;
+  video_id: string;
+  title: string;
+  start_sec: number;
+  end_sec: number;
+  status: string;
+  score: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Job {
+  id: string;
+  type: string;
+  status: string;
+  ref_type: string;
+  ref_id: string;
+  attempts: number;
+  max_attempts: number;
+  result: Record<string, unknown> | null;
+  error_message: string | null;
+  created_at: string;
+}
+
+export interface RenderedAsset {
+  id: string;
+  clip_id: string;
+  storage_key: string;
+  size_bytes: number;
+  width: number;
+  height: number;
+  codec_video: string;
+  codec_audio: string;
+  pix_fmt: string;
+  duration_sec: number;
+  status: string;
+  created_at: string;
+}
+
+export interface Publication {
+  id: string;
+  clip_id: string;
+  platform: string;
+  platform_account_id: string;
+  external_post_id: string | null;
+  status: string;
+  scheduled_at: string | null;
+  published_at: string | null;
+  attempt_count: number;
+  last_error: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface PlatformAccount {
+  id: string;
+  platform: string;
+  external_account_id: string;
+  display_name: string | null;
+  credentials: string;
+  scopes: string[];
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface Candidate {
+  id: string;
+  video_id: string;
+  start: number;
+  end: number;
+  score: number;
+  reason: string;
+  features: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface TranscriptSegment {
+  id: string;
+  start: number;
+  end: number;
+  text: string;
+  avg_confidence: number | null;
+}
+
+export interface GeneratedTexts {
+  titles: string[];
+  description: string;
+  hashtags: string[];
+}
+
+export const api = {
+  // videos
+  uploadVideo: (file: File) => apiUpload<Video>("/api/v1/videos", file),
+  listVideos: (limit = 50, offset = 0) =>
+    apiGet<{ items: Video[]; total: number }>(`/api/v1/videos?limit=${limit}&offset=${offset}`),
+  getVideo: (id: string) => apiGet<Video>(`/api/v1/videos/${id}`),
+  transcribe: (videoId: string) =>
+    apiPost<{ job_id: string }>(`/api/v1/videos/${videoId}/transcribe`),
+  getTranscript: (videoId: string) =>
+    apiGet<{ items: TranscriptSegment[]; total: number }>(`/api/v1/videos/${videoId}/transcript`),
+  // clips
+  listClips: (videoId?: string) =>
+    apiGet<{ items: Clip[]; total: number }>(
+      `/api/v1/clips${videoId ? `?video_id=${videoId}` : ""}`,
+    ),
+  createManualClip: (videoId: string, body: { title: string; start_sec: number; end_sec: number }) =>
+    apiPost<Clip>(`/api/v1/videos/${videoId}/clips/manual`, body),
+  renderClip: (clipId: string) =>
+    apiPost<Job>(`/api/v1/clips/${clipId}/render`),
+  getJob: (jobId: string) => apiGet<Job>(`/api/v1/jobs/${jobId}`),
+  getRender: (assetId: string) => apiGet<RenderedAsset>(`/api/v1/renders/${assetId}`),
+  getRenderUrl: (assetId: string) =>
+    apiGet<{ url: string; expires_sec: number }>(`/api/v1/renders/${assetId}/download`),
+  // candidates
+  generateCandidates: (videoId: string, topK = 5) =>
+    apiPost<{ items: Candidate[]; total: number }>(
+      `/api/v1/videos/${videoId}/candidates?top_k=${topK}`,
+    ),
+  listCandidates: (videoId: string) =>
+    apiGet<{ items: Candidate[]; total: number }>(`/api/v1/videos/${videoId}/candidates`),
+  promoteCandidate: (id: string, title?: string) =>
+    apiPost<Clip>(`/api/v1/candidates/${id}/promote`, title ? { title } : {}),
+  // texts
+  generateTexts: (clipId: string, platform: string) =>
+    apiPost<{ job_id: string | null; texts: GeneratedTexts; captions_srt: string }>(
+      "/api/v1/texts/generate",
+      { clip_id: clipId, platform },
+    ),
+  getClipTexts: (clipId: string, platform: string) =>
+    apiGet<{ texts: GeneratedTexts | null }>(`/api/v1/clips/${clipId}/texts?platform=${platform}`),
+  // publications
+  manualPublish: (body: {
+    clip_id: string;
+    platform: string;
+    platform_account_id: string;
+    title: string;
+    description?: string;
+    privacy: string;
+  }) => apiPost<Publication>("/api/v1/publications/manual", body),
+  listPublications: (params?: { clip_id?: string; platform?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.clip_id) query.set("clip_id", params.clip_id);
+    if (params?.platform) query.set("platform", params.platform);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return apiGet<{ items: Publication[]; total: number }>(`/api/v1/publications${suffix}`);
+  },
+  // platform accounts
+  createPlatformAccount: (body: {
+    platform: string;
+    external_account_id: string;
+    display_name?: string;
+    credentials: Record<string, string>;
+    scopes?: string[];
+  }) => apiPost<PlatformAccount>("/api/v1/platform-accounts", body),
+  listPlatformAccounts: () =>
+    apiGet<{ items: PlatformAccount[]; total: number }>("/api/v1/platform-accounts"),
+};
+
+export function fmtDuration(sec: number | null): string {
+  if (sec === null || sec === undefined) return "—";
+  const m = Math.floor(sec / 60);
+  const s = Math.round(sec % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+export function fmtBytes(bytes: number): string {
+  if (bytes > 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
+  if (bytes > 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024).toFixed(0)} KB`;
 }
