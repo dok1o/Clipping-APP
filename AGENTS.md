@@ -23,23 +23,23 @@
 ```bash
 # --- bootstrap ---
 python3 -m venv .venv
-cd backend && PIP_CACHE_DIR=/home/user/pipcache ../../.venv/bin/pip install -e ".[dev]"
+cd backend && PIP_CACHE_DIR=/home/user/pipcache ../.venv/bin/pip install -e ".[dev]"
 
 # --- тесты (основной suite, без внешних сервисов) ---
-cd backend && ../../.venv/bin/pytest -m "not real_services"
+cd backend && ../.venv/bin/pytest -m "not real_services"
 
 # --- реальные интеграционные проверки (нужны живые сервисы/бинари) ---
-cd backend && RUN_REAL_INTEGRATION=1 ../../.venv/bin/pytest -m real_services
+cd backend && RUN_REAL_INTEGRATION=1 ../.venv/bin/pytest -m real_services
 
 # --- миграции ---
-cd backend && ../../.venv/bin/alembic upgrade head
-cd backend && ../../.venv/bin/alembic downgrade -1 && ../../.venv/bin/alembic upgrade head
+cd backend && ../.venv/bin/alembic upgrade head
+cd backend && ../.venv/bin/alembic downgrade -1 && ../.venv/bin/alembic upgrade head
 
 # --- запуск API (dev) ---
-cd backend && ../../.venv/bin/python -m uvicorn app.main:app --reload --port 8000
+cd backend && ../.venv/bin/python -m uvicorn app.main:app --reload --port 8000
 
 # --- celery worker (нужен Redis; без Redis — CELERY_TASK_ALWAYS_EAGER=1) ---
-cd backend && ../../.venv/bin/celery -A app.workers.celery_app worker --loglevel=info
+cd backend && ../.venv/bin/celery -A app.workers.celery_app worker --loglevel=info
 
 # --- frontend ---
 cd frontend && npm install && npm run build && npm run typecheck && npm run dev

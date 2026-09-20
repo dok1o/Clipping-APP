@@ -23,7 +23,7 @@ cp .env.example .env
 ./.venv/bin/python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 
 # 1) зависимости бэкенда
-cd backend && PIP_CACHE_DIR=/home/user/pipcache ../../.venv/bin/pip install -e ".[dev]" && cd ..
+cd backend && PIP_CACHE_DIR=/home/user/pipcache ../.venv/bin/pip install -e ".[dev]" && cd ..
 
 # 2) сервисы (на реальной машине; в песочнице их нет — тесты идут на SQLite/moto/eager):
 #    PostgreSQL: docker run -d -p 5432:5432 -e POSTGRES_USER=clipper -e POSTGRES_PASSWORD=clipper -e POSTGRES_DB=clipper postgres:16
@@ -33,14 +33,14 @@ cd backend && PIP_CACHE_DIR=/home/user/pipcache ../../.venv/bin/pip install -e "
 #    Для быстрого старта без сервисов можно использовать SQLite: DATABASE_URL=sqlite:///./clipper-dev.db
 
 # 3) миграции
-cd backend && ../../.venv/bin/alembic upgrade head && cd ..
+cd backend && ../.venv/bin/alembic upgrade head && cd ..
 
 # 4) API
-cd backend && ../../.venv/bin/python -m uvicorn app.main:app --reload --port 8000 &
-#    (без Redis: CELERY_TASK_ALWAYS_EAGER=1 ../../.venv/bin/python -m uvicorn app.main:app --port 8000)
+cd backend && ../.venv/bin/python -m uvicorn app.main:app --reload --port 8000 &
+#    (без Redis: CELERY_TASK_ALWAYS_EAGER=1 ../.venv/bin/python -m uvicorn app.main:app --port 8000)
 
 # 5) Celery worker (для фоновых задач; опционально при eager-режиме)
-cd backend && ../../.venv/bin/celery -A app.workers.celery_app worker --loglevel=info &
+cd backend && ../.venv/bin/celery -A app.workers.celery_app worker --loglevel=info &
 
 # 6) фронтенд
 cd frontend && npm install && npm run dev   # http://localhost:5173
@@ -50,10 +50,10 @@ cd frontend && npm install && npm run dev   # http://localhost:5173
 
 ```bash
 # основной suite — без внешних сервисов (SQLite + moto + Celery eager):
-cd backend && ../../.venv/bin/pytest -m "not real_services"
+cd backend && ../.venv/bin/pytest -m "not real_services"
 
 # реальные интеграционные (живые PG/Redis/MinIO/ffmpeg):
-cd backend && RUN_REAL_INTEGRATION=1 ../../.venv/bin/pytest -m real_services
+cd backend && RUN_REAL_INTEGRATION=1 ../.venv/bin/pytest -m real_services
 
 # runtime-проверки окружения (честные PASS/FAIL/SKIP):
 ./.venv/bin/python scripts/verify_ffmpeg.py      # синтетика + вертикальный рендер 1080x1920

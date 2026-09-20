@@ -1,0 +1,26 @@
+Metadata-Version: 2.4
+Name: ai-clipper-backend
+Version: 0.1.0
+Summary: AI Clipper backend - local self-hosted short-form video pipeline
+Requires-Python: >=3.11
+Requires-Dist: fastapi>=0.110
+Requires-Dist: uvicorn[standard]>=0.29
+Requires-Dist: sqlalchemy>=2.0
+Requires-Dist: alembic>=1.13
+Requires-Dist: pydantic>=2.6
+Requires-Dist: pydantic-settings>=2.2
+Requires-Dist: celery[redis]>=5.3
+Requires-Dist: redis>=5.0
+Requires-Dist: boto3>=1.34
+Requires-Dist: python-multipart>=0.0.9
+Requires-Dist: cryptography>=42.0
+Requires-Dist: psycopg[binary]>=3.1
+Requires-Dist: httpx>=0.27
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: moto[s3]>=5.0; extra == "dev"
+Provides-Extra: whisper
+Requires-Dist: faster-whisper>=1.0; extra == "whisper"
+Provides-Extra: ml
+Requires-Dist: scikit-learn>=1.4; extra == "ml"
+Requires-Dist: joblib>=1.3; extra == "ml"

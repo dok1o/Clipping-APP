@@ -22,3 +22,9 @@
 - Удалено (в рамках ADR-000, сохранено в истории): старая неканоническая реализация.
 - Тесты: `find . -type d` — дерево совпадает с §5; `grep -c "=" .env.example` — 60+ переменных, секретные поля пустые.
 - Статус: DONE.
+
+### T0.2 — Config + FastAPI health + logging/errors — DONE (2026-09-20)
+- Файлы: backend/pyproject.toml (+ extras dev/whisper/ml), app/core/{config,logging,errors,security}.py, app/main.py, app/api/{deps,v1/router}.py, tests/{conftest,api/test_health,unit/test_config,unit/test_repo_structure}.py.
+- Решения: статусы БД = varchar+CHECK (ADR-003); celery eager по умолчанию при APP_ENV=test (ADR-013); app/db.session и infra/s3 лениво импортируются из main.py (health-check «skip» до T0.3/T0.5); client-фикстура не зависит от БД/S3 (развязка тикетов).
+- Тесты: `pytest tests/api/test_health.py tests/unit/test_config.py` → 5 passed; uvicorn smoke: `python -m uvicorn app.main:app` → GET /health = 200 {"status":"ok","version":"0.1.0",checks:{db,redis,s3}} (uvicorn лог приложен в чат).
+- Статус: DONE.
