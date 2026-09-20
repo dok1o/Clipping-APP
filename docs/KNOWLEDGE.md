@@ -48,10 +48,11 @@
   - `RUN_REAL_INTEGRATION=1 pytest tests/integration` → **1 passed** (e2e: upload настоящего mp4 → clip → render через API+worker → asset ready 1080x1920 → presigned download валидный MP4).
 - `imageio-ffmpeg` НЕ входит в зависимости проекта (только удобный способ достать бинаррь в песочнице); на реальной машине — системный ffmpeg/ffprobe.
 
-## 5. Известные ограничения платформенных API (черновик — уточнить при T1.4)
+## 5. Платформенные API — ограничения (проверено по официальным докам)
 
-- YouTube Data API v3: квота по умолчанию 10,000 units/day на проект; upload видео ≈ 1600 units; аудитные запросы cheap. (Требует подтверждения официальной документацией.)
-- TikTok Content Posting API: доступ к полному posting требует approved app; есть sandbox-окружение. (Требует подтверждения.)
+- **TikTok метрики (проверено 2026-09-20)**: Display API v2 `POST /v2/video/query/?fields=id,view_count,like_count,comment_count,share_count` с body `{"filters": {"video_ids": [...]}}` — ОФИЦИАЛЬНО возвращает счётчики наших постов (scope video.list, user access token). Источники: https://developers.tiktok.com/doc/tiktok-api-v2-video-query (Query Videos) и https://developers.tiktok.com/doc/tiktok-api-v2-video-object (Video Object: view_count int64, like/comment/share int32). Реализовано в `services/analytics/metrics_service.py` (TikTokMetricsAdapter). Research API (более богатые поля) требует аппрува и НЕ используется.
+- **TikTok публикация**: см. §2 (quota/audit ограничения, unaudited → приватные посты).
+- **YouTube** (вторая платформа, не подключена): метрики будут через YouTube Data API v3 `videos.list(part=statistics)` (официально) и/или YouTube Analytics API — исследование при подключении.
 
 ## 6. Решения по инфраструктуре
 

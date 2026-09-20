@@ -148,9 +148,47 @@ def publish_task(publication_id: str | UUID) -> dict:
 
 
 @celery_app.task(name="app.workers.tasks.metrics_sync_task")
-def metrics_sync_task(publication_id: str | UUID) -> dict:
-    """Stage 6 implements real metric fetching; stub keeps the contract."""
-    return {"publication_id": str(publication_id), "status": "stub"}
+def metrics_sync_task(job_id: str | UUID) -> dict:
+    """Fetch one publication's metrics snapshot (official API adapters only)."""
+    from app.services.analytics.metrics_service import execute_metrics_sync
+
+    db = None
+    try:
+        from app.db.session import session_factory
+
+        db = session_factory()
+        job = execute_metrics_sync(db, UUID(str(job_id)))
+        return {"job_id": str(job_id), "status": job.status, "result": job.result}
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("metrics sync task failed")
+        return {"job_id": str(job_id), "status": "failed", "error": str(exc)[:500]}
+    finally:
+        if db is not None:
+            db.close()
+
+
+@celery_app.task(name="app.workers.tasks.sync_all_metrics")
+def sync_all_metrics() -> dict:
+    """Beat entry: queue metrics_sync jobs for all published publications."""
+    from app.db.session import session_factory
+    from app.services.analytics.metrics_service import sync_all_published
+    from app.workers.tasks import metrics_sync_task as _mst
+
+    db = None
+    try:
+        db = session_factory()
+        result = sync_all_published(db)
+        for job in db.query(__import__("app.models.job", fromlist=["Job"]).Job).filter_by(
+            job_type="metrics_sync", status="queued"
+        ).all():
+            _mst.delay(job.id)
+        return result
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("sync_all_metrics failed")
+        return {"error": str(exc)[:500]}
+    finally:
+        if db is not None:
+            db.close()
 
 
 @celery_app.task(name="app.workers.tasks.process_scheduled_publications")

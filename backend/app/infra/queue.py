@@ -29,6 +29,10 @@ def create_celery_app() -> Celery:
                 "task": "app.workers.tasks.process_scheduled_publications",
                 "schedule": 30.0,  # every 30s (spec §21: Beat preferable)
             },
+            "sync-all-metrics": {
+                "task": "app.workers.tasks.sync_all_metrics",
+                "schedule": 900.0,  # every 15 min (spec §22: периодический sync)
+            },
         },
     )
     logger.debug(

@@ -194,3 +194,23 @@
 **GATE: GO** — ни одна длинная операция не блокирует HTTP синхронно (202+Job), reconcile работает (unit), автопубликация с защитой от дублей (mock-доказательство).
 
 ---
+
+### T6.1 — Metrics sync via official API — DONE (2026-09-20)
+- Файлы: app/models/metric.py (+миграция 0003, индекс (publication_id, captured_at)), app/services/analytics/metrics_service.py (MetricsAdapter Protocol; TikTokMetricsAdapter — Display API v2 /v2/video/query/ fields=view/like/comment/share_count, официальные доки в KNOWLEDGE §5), app/schemas/analytics.py, app/api/v1/analytics.py (POST sync-metrics 202+Job, GET metrics), workers.metrics_sync_task + sync_all_metrics, beat 15 мин.
+- Тесты: адаптер против MockTransport (парсинг статистики, error-code, video_not_found) + flow с fake-адаптером (202→succeeded→Metric с raw+normalized, captured_at Z) + 409 not published + failed job. Миграции 0003 цикл OK.
+- Статус: DONE.
+
+### T6.2 — Analytics UI — DONE (2026-09-20)
+- AnalyticsPage: таблица по опубликованным публикациям (views/likes/comments/shares, число синхронизаций), SVG-спарклайн динамики views (без chart-либ), кнопка «Синхронизировать метрики». npm build + typecheck OK.
+- Статус: DONE.
+
+### T6.3 — Аудит Stage 6 — DONE (2026-09-20)
+- KNOWLEDGE §5: официальные источники TikTok-метрик с URL и датой (tiktok-api-v2-video-query, tiktok-api-v2-video-object). Никакого скрапинга. Полный suite: **178 passed**.
+
+## Stage 6 — REPORT (2026-09-20)
+**Изменения**: метрики через официальный TikTok Display API (video/query), Job metrics_sync + beat 15 мин, хранение raw+normalized, endpoints sync-metrics/metrics, AnalyticsPage с динамикой.
+**Тесты**: `pytest -m "not real_services"` → **178 passed**; frontend build+typecheck OK.
+**Блокеры**: реальные метрики — нужны ключи на машине пользователя (dry-путь покрыт fake-адаптером и MockTransport).
+**GATE: GO** — метрики только официальным путём (доказано адаптером по официальным докам), raw+normalized хранятся, отображаются в dashboard.
+
+---

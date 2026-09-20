@@ -126,6 +126,16 @@ export interface Publication {
   created_at: string;
 }
 
+export interface Metric {
+  id: string;
+  publication_id: string;
+  captured_at: string;
+  views: number | null;
+  likes: number | null;
+  comments: number | null;
+  shares: number | null;
+}
+
 export interface PlatformAccount {
   id: string;
   platform: string;
@@ -218,6 +228,11 @@ export const api = {
     const suffix = query.toString() ? `?${query.toString()}` : "";
     return apiGet<{ items: Publication[]; total: number }>(`/api/v1/publications${suffix}`);
   },
+  // metrics
+  syncMetrics: (publicationId: string) =>
+    apiPost<{ job_id: string }>(`/api/v1/publications/${publicationId}/sync-metrics`),
+  getMetrics: (publicationId: string) =>
+    apiGet<{ items: Metric[]; total: number }>(`/api/v1/publications/${publicationId}/metrics`),
   // platform accounts
   createPlatformAccount: (body: {
     platform: string;

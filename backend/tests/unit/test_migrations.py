@@ -32,33 +32,38 @@ def test_upgrade_head_creates_domain_tables(tmp_path: Path) -> None:
     engine.dispose()
 
 
-STAGE3_TABLES = {"transcript_segments", "clip_candidates"}
+ALL_DOMAIN_TABLES = {
+    "videos", "clips", "jobs", "rendered_assets", "platform_accounts", "publications",  # 0001
+    "transcript_segments", "clip_candidates",  # 0002
+    "metrics",  # 0003
+}
+LATEST_REVISION_TABLES = {"metrics"}  # keep in sync with the newest migration
 
 
 def test_downgrade_one_and_upgrade_again(tmp_path: Path) -> None:
     url = _set_url(tmp_path / "m2.db")
     command.upgrade(alembic_config(), "head")
     engine = create_engine(url)
-    assert DOMAIN_TABLES | STAGE3_TABLES <= set(inspect(engine).get_table_names())
+    assert ALL_DOMAIN_TABLES <= set(inspect(engine).get_table_names())
     engine.dispose()
 
-    # -1 drops only the latest revision (Stage 3 tables)
+    # -1 drops only the latest revision's tables
     command.downgrade(alembic_config(), "-1")
     engine = create_engine(url)
     names = set(inspect(engine).get_table_names())
-    assert not (STAGE3_TABLES & names)
-    assert DOMAIN_TABLES <= names  # Stage 0/1 tables still there
+    assert not (LATEST_REVISION_TABLES & names)
+    assert ALL_DOMAIN_TABLES - LATEST_REVISION_TABLES <= names
     engine.dispose()
 
     # base drops everything
     command.downgrade(alembic_config(), "base")
     engine = create_engine(url)
-    assert not (DOMAIN_TABLES | STAGE3_TABLES) & set(inspect(engine).get_table_names())
+    assert not (ALL_DOMAIN_TABLES & set(inspect(engine).get_table_names()))
     engine.dispose()
 
     command.upgrade(alembic_config(), "head")
     engine = create_engine(url)
-    assert DOMAIN_TABLES | STAGE3_TABLES <= set(inspect(engine).get_table_names())
+    assert ALL_DOMAIN_TABLES <= set(inspect(engine).get_table_names())
     engine.dispose()
 
 
