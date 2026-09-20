@@ -68,3 +68,9 @@
 **GATE: GO** — /health 200; миграции туда-обратно зелёные; полный suite зелёный без внешних сервисов; frontend build ok; greps чисты; доки консистентны.
 
 ---
+
+### T1.1 — Upload + Video — DONE (2026-09-20)
+- Файлы: app/services/render/ffmpeg_runner.py (probe_media — единственная точка ffprobe; бинаррь отсутствует → metadata null, upload не падает), app/services/ingest/upload_service.py (санитизация, ключ videos/{uuid}/{safe_name}, stream 1MB-чанками → tmp → S3, Content-Length precheck 413, лимит на лету, mime+ext allowlist), app/schemas/video.py, app/api/v1/videos.py (POST 201 / GET list / GET by id), api/deps.get_storage.
+- Отступление от списка файлов тикета (зафиксировано): ffmpeg_runner.py создан в T1.1 с probe_media, т.к. §11 разрешает ffprobe для Video, а §6 требует единственную точку запуска бинарей — правило §6 приоритетнее (ADR-005).
+- Тесты: unit sanitize/keys/415/413/empty (12) + api multipart 201 (S3 mock содержит ключ, status ready, duration null без ffprobe) / 415 / 400 / 413 (settings override) / 500 storage_error (Video→failed) / пагинация / 404 / 422 → все зелёные; полный suite 65 passed.
+- Статус: DONE.

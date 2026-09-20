@@ -26,6 +26,8 @@ os.environ.setdefault("CELERY_TASK_ALWAYS_EAGER", "1")
 os.environ.setdefault("LLM_BACKEND", "fake")
 
 import pytest  # noqa: E402
+
+from app.api.deps import get_storage  # noqa: E402
 from alembic import command  # noqa: E402
 from alembic.config import Config as AlembicConfig  # noqa: E402
 import threading  # noqa: E402
@@ -114,10 +116,11 @@ def s3_mock(s3_server_url):
 
 
 @pytest.fixture
-def client(engine):
-    """API client bound to the per-test sqlite engine (migrations applied)."""
+def client(engine, s3_mock):
+    """API client bound to the per-test sqlite engine + moto S3 server."""
     from app.main import app
 
+    app.dependency_overrides[get_storage] = lambda: s3_mock
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
