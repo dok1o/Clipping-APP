@@ -23,9 +23,10 @@ def test_generate_texts_200(client, clip_id) -> None:
         "/api/v1/texts/generate",
         json={"clip_id": clip_id, "platform": "youtube"},
     )
-    assert response.status_code == 200, response.text
+    assert response.status_code == 202, response.text  # Stage 5: Job-dispatched
     body = response.json()
-    assert body["job_id"] is None  # synchronous Stage 2
+    assert body["job_id"] is not None
+    assert client.get(f"/api/v1/jobs/{body['job_id']}").json()["status"] == "succeeded"
     assert len(body["texts"]["titles"]) == 3
     assert all(len(t) <= 100 for t in body["texts"]["titles"])  # YouTube limit
     assert 3 <= len(body["texts"]["hashtags"]) <= 8

@@ -75,7 +75,7 @@ Stage 1: eager-режим допустим (контракт 202 стабиле�
 
 - Celery app в `infra/queue.py`; broker/backend = Redis (env). `CELERY_TASK_ALWAYS_EAGER=1` (или APP_ENV=test) — синхронное выполнение без Redis (dev/тесты).
 - Job lifecycle: `queued → running → succeeded|failed`, `retrying` при retry (Stage 5: retry только для идемпотентных; publish — никогда автоматически без idempotency-проверки).
-- Stage 5 добавит `reconcile_stuck_jobs` при старте воркера и Celery Beat для расписания.
+- Stage 5 (реализовано): `workers/job_lifecycle.py` — общий lifecycle задач (running/succeeded/failed/retrying, backoff 2^n×60с, retry только идемпотентных); `reconcile_stuck_jobs` на старте воркера (worker_ready) + POST /api/v1/jobs/reconcile; Beat 30с `process_scheduled_publications`; ADR-015: защита от двойной публикации — атомарный DB-переход scheduled→uploading (rowcount) + external_post_id guard вместо Redis SET NX (Redis отсутствует в dev/тестах; lock надстраивается в проде).
 
 ## 5. Хранилище
 

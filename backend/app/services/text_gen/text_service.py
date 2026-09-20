@@ -106,25 +106,25 @@ def apply_platform_limits(texts: GeneratedTexts, platform: str) -> GeneratedText
     return GeneratedTexts(titles=titles, description=description, hashtags=hashtags)
 
 
-def generate_for_clip(
+def create_text_gen_job(
     db: Session,
     *,
     clip_id: uuid.UUID,
     platform: str,
     tone: str | None = None,
     transcript: str | None = None,
-) -> tuple[Job, GeneratedTexts]:
-    from app.services.text_gen.base import TextGenError
+) -> tuple[Job, GeneratedTexts | None]:
+    """Validate + create a queued Job and run it (eager) or leave queued (worker).
 
+    Returns (job, texts_or_none): texts present when the job already executed
+    (eager mode); otherwise fetched via GET /clips/{id}/texts."""
     if platform not in PLATFORM_LIMITS:
         raise AppError(422, "validation_error", "platform must be youtube or tiktok")
     clip = db.get(Clip, clip_id)
     if clip is None:
         raise AppError(404, "clip_not_found", f"Clip {clip_id} not found")
 
-    settings = get_settings()
-    prompt = build_prompt(clip, platform, tone, transcript)
-    provider = get_provider()
+    from app.core.config import get_settings as _gs
 
     job = Job(
         job_type=JobType.TEXT_GEN,
@@ -137,6 +137,52 @@ def generate_for_clip(
     db.commit()
     db.refresh(job)
 
+    if _gs().celery_eager_by_default:
+        return execute_text_gen_job(
+            db, job.id, clip_id=clip_id, platform=platform, tone=tone, transcript=transcript
+        ), None
+    from app.workers.tasks import text_gen_task
+
+    text_gen_task.delay(job.id, str(clip_id), platform, tone, transcript)
+    return job, None
+
+
+def execute_text_gen_job(
+    db: Session,
+    job_id: uuid.UUID,
+    *,
+    clip_id: uuid.UUID,
+    platform: str,
+    tone: str | None = None,
+    transcript: str | None = None,
+) -> Job:
+    return _generate_and_record(
+        db, job_id, clip_id=clip_id, platform=platform, tone=tone, transcript=transcript
+    )
+
+
+def _generate_and_record(
+    db: Session,
+    job_id: uuid.UUID,
+    *,
+    clip_id: uuid.UUID,
+    platform: str,
+    tone: str | None = None,
+    transcript: str | None = None,
+) -> Job:
+    from app.services.text_gen.base import TextGenError
+
+    clip = db.get(Clip, clip_id)
+    if clip is None:
+        raise AppError(404, "clip_not_found", f"Clip {clip_id} not found")
+
+    settings = get_settings()
+    prompt = build_prompt(clip, platform, tone, transcript)
+    provider = get_provider()
+
+    job = db.get(Job, job_id)
+    if job is None:
+        raise AppError(404, "job_not_found", f"Job {job_id} not found")
     job.status = JobStatus.RUNNING
     db.commit()
 
@@ -185,7 +231,7 @@ def generate_for_clip(
     job.status = JobStatus.SUCCEEDED
     db.commit()
     db.refresh(job)
-    return job, texts
+    return job
 
 
 def build_captions_srt(transcript: str | None) -> str:

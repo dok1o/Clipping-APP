@@ -24,6 +24,12 @@ def create_celery_app() -> Celery:
         timezone="UTC",
         enable_utc=True,
         broker_connection_retry_on_startup=True,
+        beat_schedule={
+            "process-scheduled-publications": {
+                "task": "app.workers.tasks.process_scheduled_publications",
+                "schedule": 30.0,  # every 30s (spec §21: Beat preferable)
+            },
+        },
     )
     logger.debug(
         "celery app created (eager=%s)", settings.celery_eager_by_default

@@ -173,3 +173,24 @@
 **GATE: GO**.
 
 ---
+
+### T5.1 — Celery-перевод + Job lifecycle + reconcile — DONE (2026-09-20)
+- Файлы: app/workers/job_lifecycle.py (mark_running/handle_success/handle_failure с retry-политикой: только идемпотентные, backoff 2^n×60; reconcile_stuck_jobs >15мин; requeue_retrying), app/workers/tasks.py (переписаны: _run_job-обёртка уважает сервисные failed-статусы; text_gen_task; publish_task без авто-ретраев; process_scheduled_publications), app/workers/celery_app.py (worker_ready → reconcile), app/infra/queue.py (beat 30с), app/api/v1/jobs.py (POST /jobs/reconcile), texts API → 202+Job.
+- Тесты: unit lifecycle 7 (retry→retrying→failed по attempts, publish никогда, backoff 60/120/240, reconcile stuck→retrying/failed/fresh untouched, exhausted→failed) + полный suite регресс.
+- Статус: DONE.
+
+### T5.2 — Scheduling + autopublish + limits — DONE (2026-09-20)
+- Файлы: publish_service.execute_scheduled_publication (атомарный claim scheduled→uploading rowcount-гард; external_post_id no-op guard), process_due_publications (due-выборка, дневные лимиты per-platform, min-interval, перенос scheduled_at без потерь).
+- Тесты: 5 (due→published+external id; **двойной запуск → ровно 1 вызов upload + no-op при прямом re-execute**; daily limit 0 → rescheduled+status scheduled; min-interval → rescheduled (второй клип — partial unique блокирует тот же клип по дизайну); platform_error → failed+last_error). Полный suite: **172 passed**.
+- Статус: DONE.
+
+### T5.3 — Аудит Stage 5 — DONE (2026-09-20)
+- CONTRACTS/ARCHITECTURE обновлены (202-контракт texts, reconcile endpoint, beat, лимиты, ADR-015). Живой Redis в песочнице отсутствует — Beat/reconcile проверены unit-уровнем + eager; ручная проверка на реальной машине: `celery -A app.workers.celery_app worker -B` (worker+beat) с живым Redis.
+
+## Stage 5 — REPORT (2026-09-20)
+**Изменения**: все длинные операции через Job (transcribe/render/text_gen уже, texts API → 202+Job), Job lifecycle с retry-политикой и reconcile на старте воркера, Celery Beat 30с, автопубликация due-scheduled с дневными лимитами/мин-интервалом/защитой от дублей (rowcount-гард + external_post_id), POST /jobs/reconcile.
+**Тесты**: `pytest -m "not real_services"` → **172 passed** (включая доказательства: двойной запуск → 1 upload; лимит → перенос; publish не ретраится).
+**Блокеры**: живой Redis+Beat — машина пользователя (команда в README); в песочнице eager-режим.
+**GATE: GO** — ни одна длинная операция не блокирует HTTP синхронно (202+Job), reconcile работает (unit), автопубликация с защитой от дублей (mock-доказательство).
+
+---

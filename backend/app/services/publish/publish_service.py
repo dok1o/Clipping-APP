@@ -12,7 +12,9 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import select
+from datetime import timedelta
+
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
@@ -209,3 +211,134 @@ def list_publications(
     total = db.scalar(count_query) or 0
     rows = db.scalars(query.order_by(Publication.created_at.desc()).limit(limit).offset(offset))
     return list(rows), total
+
+
+# ---------------- Stage 5: scheduled autopublish (spec §20-§21) ----------------
+
+def execute_scheduled_publication(
+    db: Session, storage: S3Storage, publication: Publication | uuid.UUID
+) -> Publication:
+    """Execute one publication (scheduled or deferred manual). Duplicate-safe:
+    if external_post_id is already set, the post is marked published without
+    re-uploading (§21 'защита от повторной публикации')."""
+    if isinstance(publication, uuid.UUID):
+        publication = db.get(Publication, publication)
+        if publication is None:
+            raise AppError(404, "publication_not_found", "Publication not found")
+
+    if publication.status == PublicationStatus.PUBLISHED:
+        return publication  # idempotent no-op
+    if publication.external_post_id:
+        publication.status = PublicationStatus.PUBLISHED
+        if publication.published_at is None:
+            publication.published_at = datetime.now(timezone.utc)
+        db.commit()
+        return publication
+
+    if publication.status == PublicationStatus.SCHEDULED:
+        # atomic claim: scheduled -> uploading (row-level guard against double-run)
+        claimed = db.execute(
+            update(Publication)
+            .where(
+                Publication.id == publication.id,
+                Publication.status == PublicationStatus.SCHEDULED,
+            )
+            .values(status=PublicationStatus.UPLOADING)
+        )
+        db.commit()
+        if claimed.rowcount != 1:
+            db.rollback()
+            db.refresh(publication)
+            return publication  # another worker took it
+
+    return execute_publication(db, storage, publication)
+
+
+def _daily_published_count(db: Session, platform: str) -> int:
+    from datetime import time as dtime
+
+    midnight = datetime.combine(datetime.now(timezone.utc).date(), dtime.min, tzinfo=timezone.utc)
+    return (
+        db.scalar(
+            select(func.count())
+            .select_from(Publication)
+            .where(
+                Publication.platform == platform,
+                Publication.status == PublicationStatus.PUBLISHED,
+                Publication.published_at >= midnight.replace(tzinfo=None),
+            )
+        )
+        or 0
+    )
+
+
+def _last_published_at(db: Session, platform: str) -> datetime | None:
+    return db.scalar(
+        select(func.max(Publication.published_at)).where(
+            Publication.platform == platform,
+            Publication.status == PublicationStatus.PUBLISHED,
+        )
+    )
+
+
+def process_due_publications(db: Session, storage: S3Storage) -> dict:
+    """Beat worker body: publish everything due, honoring rate limits (§21).
+
+    Limits (env): {PLATFORM}_DAILY_LIMIT publications/day per platform,
+    PUBLISH_MIN_INTERVAL_SEC between successive publishes. On limit hit the
+    publication is rescheduled (+interval) — no data loss, no duplicates.
+    """
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    now = datetime.now(timezone.utc)
+    limits = {
+        "tiktok": settings.tiktok_daily_limit,
+        "youtube": settings.youtube_daily_limit,
+    }
+
+    due = db.scalars(
+        select(Publication)
+        .where(
+            Publication.status == PublicationStatus.SCHEDULED,
+            Publication.scheduled_at.is_not(None),
+            Publication.scheduled_at <= now.replace(tzinfo=None),
+        )
+        .order_by(Publication.scheduled_at)
+    )
+    results = {"published": 0, "failed": 0, "rescheduled": 0, "skipped": 0}
+    for publication in due:
+        platform = publication.platform
+        daily_limit = limits.get(platform, 10)
+        if _daily_published_count(db, platform) >= daily_limit:
+            publication.scheduled_at = now + timedelta(seconds=settings.publish_min_interval_sec)
+            results["rescheduled"] += 1
+            db.commit()
+            continue
+        last = _last_published_at(db, platform)
+        if last is not None:
+            elapsed = (now - last.replace(tzinfo=timezone.utc)).total_seconds()
+            if elapsed < settings.publish_min_interval_sec:
+                wait = settings.publish_min_interval_sec - elapsed
+                publication.scheduled_at = now + timedelta(seconds=wait)
+                results["rescheduled"] += 1
+                db.commit()
+                continue
+
+        try:
+            finished = execute_scheduled_publication(db, storage, publication)
+            if finished.status == PublicationStatus.PUBLISHED:
+                results["published"] += 1
+            elif finished.status == PublicationStatus.FAILED:
+                results["failed"] += 1
+            else:
+                results["skipped"] += 1
+        except AppError:
+            results["failed"] += 1  # publication already marked failed inside
+        except Exception:  # noqa: BLE001
+            logger.exception("scheduled publication %s crashed", publication.id)
+            publication.status = PublicationStatus.FAILED
+            publication.last_error = "internal_error"
+            db.commit()
+            results["failed"] += 1
+    return results

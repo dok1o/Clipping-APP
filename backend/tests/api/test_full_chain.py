@@ -83,7 +83,7 @@ def test_stage3_full_chain(client, monkeypatch) -> None:
         texts = client.post(
             "/api/v1/texts/generate", json={"clip_id": clip_id, "platform": platform}
         )
-        assert texts.status_code == 200
+        assert texts.status_code == 202
         body = texts.json()
         assert len(body["texts"]["titles"]) == 3
         assert all(len(t) <= title_limit for t in body["texts"]["titles"])

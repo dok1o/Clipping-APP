@@ -1,5 +1,5 @@
-"""Texts API (CONTRACTS §4.12)."""
-from fastapi import APIRouter, Depends
+"""Texts API (CONTRACTS §4.12). Stage 5: dispatch via Job (202)."""
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -9,9 +9,13 @@ from app.services.text_gen import text_service
 router = APIRouter(tags=["texts"])
 
 
-@router.post("/texts/generate", response_model=TextGenResult)
+@router.post("/texts/generate", response_model=TextGenResult, status_code=status.HTTP_202_ACCEPTED)
 def generate_texts(payload: TextGenCreate, db: Session = Depends(get_db)) -> TextGenResult:
-    job, texts = text_service.generate_for_clip(
+    """Dispatch a text_gen Job. In eager mode (dev/tests) the result is ready
+    immediately; with a real worker the texts appear via GET /clips/{id}/texts."""
+    from app.workers.tasks import text_gen_task
+
+    job, texts = text_service.create_text_gen_job(
         db,
         clip_id=payload.clip_id,
         platform=payload.platform,
@@ -20,11 +24,11 @@ def generate_texts(payload: TextGenCreate, db: Session = Depends(get_db)) -> Tex
     )
     result = job.result or {}
     return TextGenResult(
-        job_id=None,  # synchronous in Stage 2; Stage 5 keeps the same response shape
+        job_id=job.id,
         texts=GeneratedTextsOut(
-            titles=result.get("titles", texts.titles),
-            description=result.get("description", texts.description),
-            hashtags=result.get("hashtags", texts.hashtags),
+            titles=result.get("titles", texts.titles if texts else []),
+            description=result.get("description", texts.description if texts else ""),
+            hashtags=result.get("hashtags", texts.hashtags if texts else []),
         ),
         captions_srt=result.get("captions_srt", ""),
         platform=payload.platform,
