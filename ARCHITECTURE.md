@@ -1,89 +1,102 @@
-# ARCHITECTURE.md
+# ARCHITECTURE — модули, границы, потоки, ADR
 
-Обновляется только при изменении структуры модулей — не при каждом коммите. Источник истины по устройству системы; при конфликте с описанием в чате приоритет у этого файла.
+> Приоритет: MASTER_SPEC > CONTRACTS > **ARCHITECTURE** > AGENTS > KNOWLEDGE > PROGRESS.
 
----
-
-## Общая схема данных (целевая, высокоуровнево)
+## 1. Обзор
 
 ```
-[источник видео] → ingestion → ai-clipping → text-gen → video-effects → publisher → [соцсети]
-                                                                             ↓
-                                                                   analytics-learning
-                                                                             ↓
-                                                                     dashboard (чтение)
+┌────────────┐   HTTP/JSON    ┌──────────────────────────────────────────┐
+│  frontend  │ ─────────────► │  FastAPI app (app/main.py)               │
+│ React/Vite │ ◄───────────── │  api/v1/* — только HTTP-слой             │
+└────────────┘                │  services/* — бизнес-логика              │
+                              │  models/schemas — домен                  │
+                              │  infra/* — s3 (boto3), queue (Celery)    │
+                              └──────┬───────────┬───────────┬───────────┘
+                                     │ SQLAlchemy │ Celery    │ boto3
+                                     ▼           ▼           ▼
+                                PostgreSQL     Redis      MinIO/S3
+                                              (broker/    (videos/,
+                                               backend)    renders/)
+                              workers/* — Celery tasks → services/*
+                              ffmpeg/ffprobe — только через
+                              services/render/ffmpeg_runner.py
 ```
 
-`analytics_learning` собирает метрики опубликованных клипов и передаёт приоритезацию обратно в `ai_clipping` (замкнутый цикл обучения — вступает в силу на Этапе 7).
+Runtime-компоненты: FastAPI (uvicorn), Celery worker, Celery beat (Stage 5), PostgreSQL, Redis, MinIO, frontend dev/build. Все конфигурируются env (см. `.env.example`).
 
-Для MVP Stage 1 используется pipeline без AI:
-
-```
-manual video upload → Video → manual clip timestamps → Clip → video-effects → RenderedAsset → manual publishing to one platform → Publication
-```
-
-Stage 1 не зависит от `ai_clipping` и `text_gen`; AI clipping и text generation подключаются на следующих стадиях.
-
----
-
-## Модули и границы ответственности
-
-| Модуль | Отвечает за | НЕ отвечает за |
-|---|---|---|
-| `ingestion` | Приём видео, извлечение аудио, транскрипция, scene detection | Выбор "лучших" моментов — это `ai_clipping` |
-| `ai_clipping` | Ранжирование сегментов по потенциальной виральности | Рендер видео, тексты |
-| `text_gen` | Заголовки/описания/хэштеги/субтитры | Монтаж видео |
-| `video_effects` | Кроп, субтитры на видео, переходы, watermark, рендер (ffmpeg) | Публикацию |
-| `publisher` | API соцсетей, очередь публикаций, retry, хранение токенов | Выбор контента |
-| `analytics_learning` | Сбор метрик, поиск паттернов | Публикацию, монтаж |
-| `dashboard` | Отображение состояния (read-only к остальным модулям через API) | Бизнес-логику модулей |
-| `infra` | Очереди (Redis/Celery), хранилище (S3), схема БД, деплой | Продуктовую логику |
-
-Полное описание контрактов между модулями — в `CONTRACTS.md`. Этот файл не дублирует интерфейсы, только границы ответственности и общую схему.
-
-В архитектурных описаниях допустимы названия `ai-clipping`, `text-gen`, `video-effects`, `analytics-learning`.
-Реальные Python package/directory names всегда: `ai_clipping`, `text_gen`, `video_effects`, `analytics_learning`.
-
----
-
-## Структура репозитория (план, актуализировать по факту)
+## 2. Структура и границы модулей
 
 ```
-backend/
-├── app/
-│   ├── ingestion/
-│   ├── ai_clipping/
-│   ├── text_gen/
-│   ├── video_effects/
-│   ├── publisher/
-│   ├── analytics_learning/
-│   ├── infra/
-│   └── main.py
-├── tests/
-├── alembic/
-│   ├── env.py
-│   ├── script.py.mako
-│   └── versions/
-└── alembic.ini
-frontend/        # React-дашборд
-storage/         # локальные видео и промежуточные файлы, не коммитить
-AGENTS.md
-PROGRESS.md
-ARCHITECTURE.md
-CONTRACTS.md
+backend/app/
+├── main.py            # FastAPI app factory, /health, CORS, error handlers
+├── core/              # config (pydantic-settings), logging, errors (AppError), security (Fernet)
+├── db/                # session (engine/sessionmaker, init_engine для тестов), base (DeclarativeBase+naming)
+├── models/            # SQLAlchemy ORM, 1 файл на домен
+├── schemas/           # Pydantic request/response, 1 файл на домен
+├── api/               # deps (get_settings/get_db/get_storage) + v1/ роутеры
+├── services/          # бизнес-логика по доменам:
+│   ├── ingest/        #   upload_service — стриминг, санитизация, S3, ffprobe(Video)
+│   ├── clips/         #   clip_service — manual clip, timestamp-валидация
+│   ├── render/        #   ffmpeg_runner (ЕДИНСТВЕННЫЙ subprocess ffmpeg/ffprobe) + render_service
+│   ├── transcription/ #   whisper_service, scene_service (Stage 3)
+│   ├── ai_clipping/   #   features, heuristic_ranker, ml_ranker (Stage 3/7)
+│   ├── text_gen/      #   base (Provider), local_provider, fake_provider, text_service (Stage 2)
+│   ├── publish/       #   base (Publisher), youtube/tiktok адаптеры, publish_service (Stage 1.4)
+│   ├── analytics/     #   metrics_service (Stage 6)
+│   └── ml/            #   dataset, train, evaluate (Stage 7)
+├── infra/             # s3.py (ЕДИНСТВЕННЫЙ boto3), queue.py (Celery app), crypto.py (re-export)
+└── workers/           # celery_app.py (CLI entry), tasks.py — тонкие таски → services
 ```
 
----
+Правила:
+- `api/*` — только HTTP: валидация, статусы, вызов сервиса, маппинг ошибок. Никакого ffmpeg/boto3/SQL.
+- `services/*` — бизнес-логика; кросс-доменные импорты только через явные интерфейсы (исключение: `ffmpeg_runner.probe_media` используется ingest — это единая точка ffprobe, см. ADR-005).
+- `infra/s3.py` — единственное место boto3 (проверяется тестом `test_audit_rules`).
+- `workers/tasks.py` — тонкие обёртки: Job-обновления + вызов сервиса.
+- Тяжёлые ML-зависимости (faster-whisper, scikit-learn) — optional extras `[whisper]`/`[ml]` с lazy import (ADR-010).
 
-## Технологические решения и почему
+## 3. Потоки данных
 
-- **PostgreSQL**, а не NoSQL — данные сильно реляционные (аккаунты ↔ видео ↔ клипы ↔ метрики).
-- **Celery/Redis**, а не синхронная обработка — рендер видео и транскрипция тяжёлые по CPU, не должны блокировать API.
-- **faster-whisper**, а не оригинальный openai-whisper — быстрее при сопоставимом качестве.
-- Эвристики в `ai_clipping` до Этапа 7, а не сразу модель — не на чём обучаться без реальных метрик.
+### Upload (UC-1)
+`multipart → стрим чанками 1MB → tmp file (лимит байт → 413) → S3 upload_file → ffprobe(tmp) опц. → Video ready`.
+Строка Video создаётся со статусом `uploading` до S3-загрузки; при storage-ошибке → `failed` + 500 `storage_error`.
 
----
+### Manual clip (UC-2)
+`POST → clip_service (проверки без ffprobe: start≥0, end>start, 5..180с, end≤duration если известна) → Clip draft`.
 
-## История значимых архитектурных решений
+### Render (UC-3)
+`POST /clips/{id}/render → Job(queued, type=render) + Clip render_queued → Celery task →
+job running → clip rendering → download video из S3 в tmp → ffmpeg_runner.render_vertical →
+upload renders/{clip}/{asset}.mp4 → RenderedAsset ready + clip rendered + job succeeded |
+RenderError → clip render_failed + job failed (код + stderr tail)`.
+Stage 1: eager-режим допустим (контракт 202 стабилен); Stage 5 — полный Celery.
 
-- 2026-08-25 — Зафиксирована исходная схема модулей и roadmap (см. AGENTS.md). Реализация не начата.
+## 4. Очереди
+
+- Celery app в `infra/queue.py`; broker/backend = Redis (env). `CELERY_TASK_ALWAYS_EAGER=1` (или APP_ENV=test) — синхронное выполнение без Redis (dev/тесты).
+- Job lifecycle: `queued → running → succeeded|failed`, `retrying` при retry (Stage 5: retry только для идемпотентных; publish — никогда автоматически без idempotency-проверки).
+- Stage 5 добавит `reconcile_stuck_jobs` при старте воркера и Celery Beat для расписания.
+
+## 5. Хранилище
+
+- S3-совместимое (MinIO локально / любой S3 через env). Бакет `clipper` (env).
+- Ключи: `videos/{video_uuid}/{safe_name}`, `renders/{clip_id}/{asset_id}.mp4`, далее `models/…` (Stage 7).
+- Скачивание — presigned URL (900 сек) через `infra/s3.py`.
+
+## 6. ADR (Architecture Decision Records)
+
+- **ADR-000 (repo)**: в репозитории находилась частичная реализация предыдущего (Codex) промпта с неканонической структурой (`app/ingestion`, `app/video_effects`, …) — удалена в рамках T0.1, сохранена в git-истории (коммит e3b2d9f). Причина: мастер-промпт требует каноническую структуру §5 «создай именно её».
+- **ADR-001 sync SQLAlchemy**: sync ORM вместо async — Celery-воркеры синхронны, тесты проще; sync-эндпоинты FastAPI исполняются в threadpool. Альтернатива (async) — сложность без выигрыша для локального single-user приложения.
+- **ADR-002 переносимость СУБД**: типы `sa.Uuid()`, `JSON().with_variant(JSONB)`, `DateTime(timezone=True)` дают PG-семантику в проде и работают на SQLite в тестах без ветвлений.
+- **ADR-003 статусы varchar+CHECK**: единый стиль на PG/SQLite, простые миграции; в коде строковые константы-классы, в Pydantic `Literal` (native PG enum отвергнут из-за ALTER-сложностей).
+- **ADR-004 init_engine**: движок инициализируется лениво, `init_engine(url)`/`reset_engine()` для изоляции тестов и eager-Celery задач, использующих ту же фабрику сессий.
+- **ADR-005 ffprobe-шлюз**: `ffmpeg_runner.probe_media` используется и `ingest` (разрешено §11), т.к. ffmpeg_runner — единственная точка запуска медиа-бинарей (запрет §6 касается не модуля, а subprocess-вызовов).
+- **ADR-006 render через Job**: контракт 202+job_id стабилен; Stage 1 — eager (`.delay()` при `task_always_eager` выполняется синхронно в процессе), Stage 5 — без изменения контракта.
+- **ADR-007 S3-абстракция**: весь доступ через `S3Storage` (boto3 только там); тесты — moto; скачивание — presigned.
+- **ADR-008 crypto**: реализация Fernet в `core/security.py`; `infra/crypto.py` — реэкспорт (нет дублирования, §9).
+- **ADR-009 frontend**: Vite+React+TS+Tailwind v3 + `react-router-dom` (функциональная навигация, не UI-библиотека); без MUI/antd/framer-motion, без лендинга.
+- **ADR-010 ML-зависимости**: faster-whisper/scikit-learn — optional extras (`[whisper]`, `[ml]`), lazy import в сервисах; основной pytest-сьют не требует их установки (моки), реальные проверки — `scripts/verify_*.py` + `tests/integration` (маркер `real_services`).
+- **ADR-011 ошибки**: `AppError(status, code, message, fields)` + единые exception handlers; 422 `validation_error` для pydantic-ошибок, доменные коды для бизнес-ошибок.
+- **ADR-012 end>start в сервисе**: `end_sec > start_sec` проверяется в clip_service (400 `invalid_range`), а не в pydantic model_validator — чтобы вернуть 400 из §10 вместо 422.
+- **ADR-013 celery eager по умолчанию в test**: `celery_eager_by_default` = APP_ENV=test или env CELERY_TASK_ALWAYS_EAGER; основной сьют не требует живого Redis.
+- **ADR-014 пип-кэш в песочнице**: `.venv/` и `node_modules/` не переживают перезапуск песочницы → используем PIP_CACHE_DIR=/home/user/pipcache и npm_config_cache=/home/user/npmcache для быстрого восстановления (см. KNOWLEDGE).
