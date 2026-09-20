@@ -74,3 +74,8 @@
 - Отступление от списка файлов тикета (зафиксировано): ffmpeg_runner.py создан в T1.1 с probe_media, т.к. §11 разрешает ffprobe для Video, а §6 требует единственную точку запуска бинарей — правило §6 приоритетнее (ADR-005).
 - Тесты: unit sanitize/keys/415/413/empty (12) + api multipart 201 (S3 mock содержит ключ, status ready, duration null без ffprobe) / 415 / 400 / 413 (settings override) / 500 storage_error (Video→failed) / пагинация / 404 / 422 → все зелёные; полный suite 65 passed.
 - Статус: DONE.
+
+### T1.2 — Manual Clip — DONE (2026-09-20)
+- Файлы: app/services/clips/clip_service.py (timestamp-валидация: end>start → 400 invalid_range, 5..180с из конфига, end≤duration только если duration известна; НИКАКИХ медиа-бинарей), app/schemas/clip.py, app/api/v1/clips.py (POST /videos/{id}/clips/manual, GET /clips?video_id=, GET /clips/{id}).
+- Тесты: 13 API-тестов (201; границы 5.0/4.99, 180/180.01; end≤start; video_not_ready 409; duration known vs null; title 1..140; 404/422; list) + mock-ассерт «probe_media не вызывается» + audit-grep «clip_service не ссылается на ffmpeg/subprocess». Полный suite: **79 passed**.
+- Статус: DONE.

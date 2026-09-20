@@ -49,3 +49,10 @@ def test_no_hardcoded_secrets_keywords() -> None:
         f"{p}:{token}" for p, src in _sources() for token in forbidden if token in src
     ]
     assert offenders == [], f"hardcoded secret-looking literals: {offenders}"
+
+
+def test_no_ffprobe_import_in_clip_service() -> None:
+    """§12: manual clip flow must not invoke media binaries (grep-level guarantee)."""
+    src = (APP_DIR / "services" / "clips" / "clip_service.py").read_text(encoding="utf-8")
+    for forbidden in ("ffmpeg", "ffprobe", "probe_media", "subprocess"):
+        assert forbidden not in src, f"clip_service must not reference {forbidden}"
