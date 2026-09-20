@@ -8,6 +8,7 @@ export default function VideosPage() {
   const [selected, setSelected] = useState<Video | null>(null);
   const [transcript, setTranscript] = useState<TranscriptSegment[] | null>(null);
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
+  const [rankedBy, setRankedBy] = useState<string>("heuristic");
   const [notice, setNotice] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -83,6 +84,7 @@ export default function VideosPage() {
     setNotice(null);
     try {
       const page = await api.generateCandidates(selected.id, 5);
+      setRankedBy(page.ranked_by);
       setCandidates(page.items);
     } catch (e) {
       setNotice(e instanceof ApiError ? `${e.code}: ${e.message}` : String(e));
@@ -192,7 +194,24 @@ export default function VideosPage() {
 
           {candidates && candidates.length > 0 && (
             <div>
-              <h3 className="text-sm font-medium mb-1">Кандидаты</h3>
+              <h3 className="text-sm font-medium mb-1">
+                Кандидаты
+                <span
+                  className={
+                    "ml-2 px-1.5 py-0.5 rounded text-xs " +
+                    (rankedBy === "ml"
+                      ? "bg-blue-100 text-blue-700"
+                      : "bg-neutral-100 text-neutral-500")
+                  }
+                  title={
+                    rankedBy === "ml"
+                      ? "ML-ранжирование (активная модель)"
+                      : "Эвристика (ML-модель не активна)"
+                  }
+                >
+                  {rankedBy === "ml" ? "ML-rerank" : "эвристика"}
+                </span>
+              </h3>
               <table className="w-full text-sm">
                 <tbody>
                   {candidates.map((c) => (

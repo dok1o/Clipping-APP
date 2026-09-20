@@ -80,10 +80,13 @@ class Settings(BaseSettings):
     tiktok_daily_limit: int = 10
     publish_min_interval_sec: int = 300
 
-    # --- ML (Stage 7) ---
-    ml_min_samples: int = 80
-    ml_active_version: str = ""
-    ml_max_age_days: int = 30
+    # --- ML rerank (Stage 7) ---
+    ml_model_dir: str = "./models"  # joblib artifacts, NOT committed
+    ml_min_training_rows: int = 30  # below this the dataset is too small to train
+    ml_retrain_min_new_rows: int = 10  # self-training trigger
+    ml_val_fraction: float = 0.25
+    ml_rerank_enabled: bool = True
+    ml_max_age_days: int = 30  # active model older than this -> prefer heuristic
 
     @property
     def effective_celery_broker_url(self) -> str:

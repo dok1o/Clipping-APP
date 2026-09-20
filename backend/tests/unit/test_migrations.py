@@ -36,8 +36,11 @@ ALL_DOMAIN_TABLES = {
     "videos", "clips", "jobs", "rendered_assets", "platform_accounts", "publications",  # 0001
     "transcript_segments", "clip_candidates",  # 0002
     "metrics",  # 0003
+    "training_runs",  # 0004
 }
-LATEST_REVISION_TABLES = {"metrics"}  # keep in sync with the newest migration
+# -1 (0006) alters jobs.type constraint only — no table changes; step back to
+# 0005 state is verified via table sets staying identical.
+LATEST_REVISION_TABLES = set()  # newest migration adds no tables
 
 
 def test_downgrade_one_and_upgrade_again(tmp_path: Path) -> None:

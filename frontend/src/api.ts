@@ -126,6 +126,18 @@ export interface Publication {
   created_at: string;
 }
 
+export interface TrainingRun {
+  id: string;
+  created_at: string;
+  status: string;
+  n_rows: number;
+  val_spearman: number | null;
+  baseline_spearman: number | null;
+  gate_passed: boolean;
+  model_version: string | null;
+  error_message: string | null;
+}
+
 export interface Metric {
   id: string;
   publication_id: string;
@@ -197,11 +209,11 @@ export const api = {
     apiGet<{ url: string; expires_sec: number }>(`/api/v1/renders/${assetId}/download`),
   // candidates
   generateCandidates: (videoId: string, topK = 5) =>
-    apiPost<{ items: Candidate[]; total: number }>(
+    apiPost<{ items: Candidate[]; total: number; ranked_by: string }>(
       `/api/v1/videos/${videoId}/candidates?top_k=${topK}`,
     ),
   listCandidates: (videoId: string) =>
-    apiGet<{ items: Candidate[]; total: number }>(`/api/v1/videos/${videoId}/candidates`),
+    apiGet<{ items: Candidate[]; total: number; ranked_by: string }>(`/api/v1/videos/${videoId}/candidates`),
   promoteCandidate: (id: string, title?: string) =>
     apiPost<Clip>(`/api/v1/candidates/${id}/promote`, title ? { title } : {}),
   // texts
@@ -228,6 +240,14 @@ export const api = {
     const suffix = query.toString() ? `?${query.toString()}` : "";
     return apiGet<{ items: Publication[]; total: number }>(`/api/v1/publications${suffix}`);
   },
+  // ml (Stage 7)
+  trainModel: () => apiPost<{ job_id: string }>("/api/v1/ml/train"),
+  listTrainingRuns: () =>
+    apiGet<{ items: TrainingRun[]; total: number }>("/api/v1/ml/runs"),
+  datasetStatus: () =>
+    apiGet<{ rows: number; skipped: Record<string, number>; targets: string[] }>(
+      "/api/v1/ml/dataset-status"
+    ),
   // metrics
   syncMetrics: (publicationId: string) =>
     apiPost<{ job_id: string }>(`/api/v1/publications/${publicationId}/sync-metrics`),

@@ -24,6 +24,7 @@ class CandidateRead(BaseModel):
 class CandidatePage(BaseModel):
     items: list[CandidateRead]
     total: int
+    ranked_by: str = "heuristic"  # "heuristic" | "ml" (Stage 7)
 
 
 class PromoteRequest(BaseModel):

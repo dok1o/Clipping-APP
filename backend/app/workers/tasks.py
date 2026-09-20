@@ -167,6 +167,64 @@ def metrics_sync_task(job_id: str | UUID) -> dict:
             db.close()
 
 
+@celery_app.task(name="app.workers.tasks.ml_train_task")
+def ml_train_task(job_id: str | UUID) -> dict:
+    """Train ML rerank model with eval gate (Stage 7)."""
+    from app.models.job import Job, JobStatus
+    from app.services.ai_clipping.ml_ranker import train_and_evaluate
+
+    db = None
+    try:
+        from app.db.session import session_factory
+
+        db = session_factory()
+        job = db.get(Job, UUID(str(job_id)))
+        if job is None:
+            raise ValueError(f"Job {job_id} not found")
+        job.status = JobStatus.RUNNING
+        db.commit()
+        run = train_and_evaluate(db, job)
+        job.status = JobStatus.SUCCEEDED
+        db.commit()
+        return {"job_id": str(job_id), "training_run_id": str(run.id), "status": run.status}
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("ml train task failed")
+        if db is not None:
+            job = db.get(Job, UUID(str(job_id)))
+            if job is not None:
+                job.status = JobStatus.FAILED
+                job.error_message = str(exc)[:2000]
+                db.commit()
+        return {"job_id": str(job_id), "status": "failed", "error": str(exc)[:500]}
+    finally:
+        if db is not None:
+            db.close()
+
+
+@celery_app.task(name="app.workers.tasks.self_train_check")
+def self_train_check() -> dict:
+    """Beat self-training loop (§3.6): retrain when enough NEW labeled rows."""
+    from app.db.session import session_factory
+    from app.services.ai_clipping.ml_ranker import count_rows_for_retrain, train_and_evaluate
+    from app.core.config import get_settings
+
+    db = None
+    try:
+        db = session_factory()
+        new_rows = count_rows_for_retrain(db)
+        if new_rows < get_settings().ml_retrain_min_new_rows:
+            return {"retrained": False, "new_rows": new_rows}
+        run = train_and_evaluate(db)
+        return {"retrained": True, "new_rows": new_rows, "status": run.status,
+                "gate_passed": run.gate_passed}
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("self_train_check failed")
+        return {"error": str(exc)[:500]}
+    finally:
+        if db is not None:
+            db.close()
+
+
 @celery_app.task(name="app.workers.tasks.sync_all_metrics")
 def sync_all_metrics() -> dict:
     """Beat entry: queue metrics_sync jobs for all published publications."""

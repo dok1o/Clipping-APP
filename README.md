@@ -23,7 +23,8 @@ cp .env.example .env
 ./.venv/bin/python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 
 # 1) зависимости бэкенда
-cd backend && PIP_CACHE_DIR=/home/user/pipcache ../.venv/bin/pip install -e ".[dev]" && cd ..
+cd backend && PIP_CACHE_DIR=/home/user/pipcache ../.venv/bin/pip install -e ".[dev,ml]" && cd ..
+# ml-экстра (scikit-learn+lightgbm+joblib) нужна для Stage 7 (ML-rerank); без неё — эвристика
 
 # 2) сервисы (на реальной машине; в песочнице их нет — тесты идут на SQLite/moto/eager):
 #    PostgreSQL: docker run -d -p 5432:5432 -e POSTGRES_USER=clipper -e POSTGRES_PASSWORD=clipper -e POSTGRES_DB=clipper postgres:16

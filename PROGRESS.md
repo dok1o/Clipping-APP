@@ -214,3 +214,34 @@
 **GATE: GO** — метрики только официальным путём (доказано адаптером по официальным докам), raw+normalized хранятся, отображаются в dashboard.
 
 ---
+
+### T7.1 — Датасет самообучения — DONE (2026-09-20)
+- `dataset_service.build_training_dataset`: Publication(published, external_post_id) → clip.features (копия фич кандидата при promote) → ПОСЛЕДНИЙ Metric → LabeledRow (7 фич + duration_sec из window; target log1p(views), fallback взвешенный engagement; строки без фич/метрик — skipped с причинами). Никаких синтетических меток.
+- Статус: DONE.
+
+### T7.2 — Обучение + eval-гейт — DONE (2026-09-20)
+- `ml_ranker.train_and_evaluate`: lightgbm (fallback sklearn GBRT), time-ordered split (новейшие ml_val_fraction — валидация), Spearman на val против ТОЧНОЙ реплики эвристической формулы; гейт = ml>baseline И ml>0. Прошёл → joblib в `models/` (вне git) + TrainingRun(succeeded); нет → TrainingRun(rejected), модель не активируется. Pyproject: extra `[ml]` (scikit-learn, lightgbm, joblib) — ARCHITECTURE ADR-016. Модель старше ml_max_age_days не активна.
+- Тесты: spearman sanity (ties/инверсия/константа), gate pass (сигнал в duration, эвристикой игнорируется) → модель активна + rerank переупорядочивает, gate fail (константный таргет) → rejected + heuristic fallback, ml_rerank_enabled=false → None.
+- Статус: DONE.
+
+### T7.3 — Rerank + self-training + UI — DONE (2026-09-20)
+- `candidate_service.generate_candidates` → (rows, ranked_by); rerank с fallback при любой ошибке; features.ml_score. API: POST /ml/train (202+Job ml_train, миграции 0005 ref_id NULL + 0006 ck type), GET /ml/runs, GET /ml/dataset-status. Beat `self_train_check` 6ч (≥ ml_retrain_min_new_rows новых строк). UI: бейдж ML-rerank/эвристика в VideosPage, секция ML в AnalyticsPage (датасет, обучение, история прогонов, результат гейта).
+- Тесты: API train→succeeded→runs; self_train_check на пустой БД → retrained:false. Полный suite: **186 passed**; frontend build+typecheck OK.
+- Статус: DONE.
+
+## Stage 7 — REPORT (2026-09-20)
+**Изменения**: датасет «фичи клипа → метрики публикации», GBM-ранкер с eval-гейтом (активация только при превышении эвристики), rerank кандидатов с автоматическим fallback, self-training beat, панель ML в UI.
+**Тесты**: `pytest -m "not real_services"` → **186 passed**; миграции 0003–0006 цикл OK; npm build+typecheck OK.
+**Блокеры**: реальное обучение имеет смысл при накоплении публикаций (ml_min_training_rows=30); в песочнице проверено синтетикой + гейт-механикой, честно задокументировано.
+**GATE: GO** — UC-6 закрыт (эвристики → ML с fallback, доказано тестами), §3.6 реализована отдельным этапом после MVP, как требовал спек.
+
+---
+
+# ФИНАЛЬНЫЙ ОТЧЁТ ПО ПРОЕКТУ (§9 DoD) — 2026-09-20
+
+- **UC-1..UC-9** (MASTER_SPEC §3): все покрыты тестами/живой проверкой в песочнице (UC-1..5,7,8 — Stage 4 live e2e через UI; UC-6 — Stage 7 тесты rerank+fallback; UC-9 метрики — Stage 6, live блокируется только egress песочницы, путь официальный).
+- **docs/KNOWLEDGE.md**: проверенные URL официальных доков TikTok (публикация + метрики) с датами (2026-09-20) — да.
+- **README quickstart**: запуск с нуля несколькими командами (venv → deps → сервисы → alembic → uvicorn/worker/beat+vite) — да, включая честные пометки о песочнице.
+- **Stage gates**: Stage 0–7 все GATE: GO с отчётами §30 в этом файле.
+- **Коммиты по стадиям**: c37ab3e (S1) → 3513e2d (S2) → 944184b (S3) → d04bdfe (S4) → 24e32f3 (S5) → 0b49fd8 (S6) → настоящий (S7).
+- **Честные ограничения**: faster-whisper (нет egress до HF) — SKIP с mocked-проверкой и инструкцией; реальные платформенные ключи — controlled-fail пути проверены; Redis/Postgres/MinIO в песочнице — sqlite+moto+eager, на реальной машине через env.

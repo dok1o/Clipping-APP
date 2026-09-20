@@ -89,7 +89,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name="pk_jobs"),
         sa.UniqueConstraint("idempotency_key", name="uq_jobs_idempotency_key"),
         sa.CheckConstraint(
-            "type IN ('transcribe', 'render', 'text_gen', 'publish', 'metrics_sync', 'train')",
+            "type IN ('transcribe', 'render', 'text_gen', 'publish', 'metrics_sync', 'ml_train')",
             name="type",
         ),
         sa.CheckConstraint(

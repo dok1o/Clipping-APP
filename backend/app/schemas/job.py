@@ -7,9 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.common import DateTimeUtc
 
-JobTypeL = Literal["transcribe", "render", "text_gen", "publish", "metrics_sync", "train"]
+JobTypeL = Literal["transcribe", "render", "text_gen", "publish", "metrics_sync", "ml_train"]
 JobStatusL = Literal["queued", "running", "succeeded", "failed", "retrying", "cancelled"]
-JobRefTypeL = Literal["video", "clip", "publication", "candidate"]
+JobRefTypeL = Literal["video", "clip", "publication", "candidate", "system"]
 
 
 class JobRead(BaseModel):
@@ -19,7 +19,7 @@ class JobRead(BaseModel):
     type: JobTypeL = Field(validation_alias="job_type")
     status: JobStatusL
     ref_type: JobRefTypeL
-    ref_id: UUID
+    ref_id: UUID | None = None  # None for system jobs (ml_train)
     attempts: int
     max_attempts: int
     idempotency_key: str | None = None

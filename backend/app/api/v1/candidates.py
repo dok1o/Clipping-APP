@@ -22,9 +22,9 @@ def generate_candidates(
     db: Session = Depends(get_db),
     storage: S3Storage = Depends(get_storage),
 ) -> CandidatePage:
-    rows = candidate_service.generate_candidates(db, storage, video_id, top_k=top_k)
+    rows, ranked_by = candidate_service.generate_candidates(db, storage, video_id, top_k=top_k)
     return CandidatePage(
-        items=[CandidateRead.model_validate(c) for c in rows], total=len(rows)
+        items=[CandidateRead.model_validate(c) for c in rows], total=len(rows), ranked_by=ranked_by
     )
 
 

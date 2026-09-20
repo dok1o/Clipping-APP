@@ -75,6 +75,7 @@ Stage 1: eager-режим допустим (контракт 202 стабиле�
 
 - Celery app в `infra/queue.py`; broker/backend = Redis (env). `CELERY_TASK_ALWAYS_EAGER=1` (или APP_ENV=test) — синхронное выполнение без Redis (dev/тесты).
 - Job lifecycle: `queued → running → succeeded|failed`, `retrying` при retry (Stage 5: retry только для идемпотентных; publish — никогда автоматически без idempotency-проверки).
+- Stage 7 (реализовано): `services/ai_clipping/{dataset_service,ml_ranker}.py` — датасет «фичи→метрики» и GBM-ранкер (lightgbm, fallback sklearn). ADR-016: eval-гейт активации (Spearman на свежих по времени 25% строк против точной реплики эвристической формулы; gate fail → rejected, модель не активируется, работает эвристика); модели в `models/` (joblib, вне git); самообучение — beat 6ч при ≥10 новых строк; ранжирование в ручке кандидатов — `ranked_by=ml|heuristic` с автоматическим fallback при любой ошибке/устаревании модели.
 - Stage 5 (реализовано): `workers/job_lifecycle.py` — общий lifecycle задач (running/succeeded/failed/retrying, backoff 2^n×60с, retry только идемпотентных); `reconcile_stuck_jobs` на старте воркера (worker_ready) + POST /api/v1/jobs/reconcile; Beat 30с `process_scheduled_publications`; ADR-015: защита от двойной публикации — атомарный DB-переход scheduled→uploading (rowcount) + external_post_id guard вместо Redis SET NX (Redis отсутствует в dev/тестах; lock надстраивается в проде).
 
 ## 5. Хранилище

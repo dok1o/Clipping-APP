@@ -76,8 +76,11 @@ def rms_timeline_from_wav(wav_path: Path, bucket_sec: float = RMS_BUCKET_SEC) ->
 
 def generate_candidates(
     db: Session, storage: S3Storage, video_id: uuid.UUID, top_k: int = 5
-) -> list[ClipCandidate]:
-    """Full heuristic pipeline for a video (spec §18)."""
+) -> tuple[list[ClipCandidate], str]:
+    """Heuristic pipeline + optional ML rerank (spec §18, §3.6).
+
+    Returns (candidates, ranked_by) — ranked_by is "ml" or "heuristic".
+    """
     settings = get_settings()
     video = get_video_or_404(db, video_id)
     if video.status != VideoStatus.READY:
@@ -142,7 +145,12 @@ def generate_candidates(
     db.commit()
     for row in rows:
         db.refresh(row)
-    return rows
+
+    # Stage 7: ML rerank on top of heuristic order (fallback inside on any issue)
+    from app.services.ai_clipping.ml_ranker import rerank
+
+    ordered, ranked_by = rerank(db, rows)
+    return ordered, ranked_by
 
 
 def promote_candidate(db: Session, candidate_id: uuid.UUID, title: str | None = None) -> Clip:

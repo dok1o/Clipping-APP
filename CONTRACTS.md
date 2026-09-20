@@ -226,6 +226,17 @@
   - `POST /api/v1/videos/{id}/candidates?top_k=5` (default 5, 1..20) → 200 `CandidatePage` (строки clip_candidates: start/end/score/features/reason). Требует транскрипт (иначе 409 `transcript_missing`) и известную duration (иначе пробует ffprobe, при неудаче 422 `video_metadata_missing`); 409 `video_not_ready`. Регенерация заменяет прежних кандидатов видео. `GET /api/v1/videos/{id}/candidates` → сохранённые, по убыванию score.
   - `POST /api/v1/candidates/{id}/promote` body `{"title"?}` → 201 `ClipRead` (status=draft, score/features наследуются; title по умолчанию — текст первого сегмента ≤60 симв). 404 `candidate_not_found`, 422 `invalid_clip_state` (окно вне лимитов).
   - Эвристики (§18): скользящие окна 15/30/45/60с шаг 5с; фичи speech_ratio / key_phrases (список RU+EN маркеров в `features.py`) / tempo_wpm (bell-оптимум 120–180) / loudness (RMS из 16k mono wav через stdlib audioop, нормировка /20000) / position (интро <30с бонус=1.0, финал −5с=0.3, иначе 0.5) / scene_alignment (границы ±2с). Итог = взвешенная сумма с весами AI_WEIGHTS_* (default 0.3/0.25/0.15/0.15/0.15). NMS IoU>0.5, top_k. Детекция сцен: ffmpeg `select='gt(scene,0.4)'` + showinfo (ADR; без PySceneDetect/OpenCV); fallback — равномерные окна 30с. Границы сцен хранятся в features каждого кандидата (scene_boundaries, scene_fallback) и не кэшируются отдельно.
+- Stage 6 (реализовано):
+  - `POST /api/v1/publications/{id}/sync-metrics` → **202** `{job_id, publication_id, status}` — Job metrics_sync; адаптеры только официальные (TikTok Display API `POST /v2/video/query/`).
+  - `GET /api/v1/publications/{id}/metrics` → `{items: Metric[], total}` — снимки во времени (raw+normalized), `captured_at` ASC.
+  - Beat: `sync_all_metrics` каждые 15 мин — Job'ы на все published с external_post_id.
+- Stage 7 (реализовано):
+  - `POST /api/v1/ml/train` → **202** `{job_id, status}` — обучение ML-rerank с eval-гейтом (job ml_train, ref_type=system, ref_id=NULL).
+  - `GET /api/v1/ml/runs?limit=` → `{items: TrainingRun[], total}` — история обучений (val_spearman, baseline_spearman, gate_passed, model_version).
+  - `GET /api/v1/ml/dataset-status` → `{rows, skipped, targets}` — размер обучающего датасета.
+  - `POST /api/v1/videos/{id}/candidates` → `{items, total, ranked_by}` — `ranked_by: "ml"|"heuristic"`; при активной модели кандидаты переупорядочены по ML-score (features.ml_score), иначе эвристика.
+  - Eval-гейт (§23): модель активируется ТОЛЬКО если val Spearman(ML) > Spearman(эвристики на тех же строках) и > 0; иначе run=rejected, работает эвристика. Модель старше ml_max_age_days → не активна. Никаких синтетических меток: датасет = published клипы (фичи promote) + последний Metric.
+  - Beat: `self_train_check` каждые 6 ч — дообучение при ≥ ml_retrain_min_new_rows новых строк с прошлого прогона.
 - Stage 5 (реализовано):
   - `POST /api/v1/texts/generate` → **202** `{job_id, texts (могут быть пустыми до завершения job), captions_srt, platform}` — генерация исполняется Job'ом; результат — `GET /clips/{id}/texts`.
   - `POST /api/v1/jobs/reconcile` → `{reconciled: {retrying, failed}, requeued}` — ручной запуск восстановления застрявших Job (автоматически — при старте воркера, сигнал worker_ready: running/queued без прогресса > 15 мин → retrying (идемпотентные) / failed).

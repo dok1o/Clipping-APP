@@ -33,6 +33,10 @@ def create_celery_app() -> Celery:
                 "task": "app.workers.tasks.sync_all_metrics",
                 "schedule": 900.0,  # every 15 min (spec §22: периодический sync)
             },
+            "self-train-check": {
+                "task": "app.workers.tasks.self_train_check",
+                "schedule": 21600.0,  # every 6h (spec §3.6: отдельный этап самообучения)
+            },
         },
     )
     logger.debug(
