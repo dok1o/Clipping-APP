@@ -32,17 +32,33 @@ def test_upgrade_head_creates_domain_tables(tmp_path: Path) -> None:
     engine.dispose()
 
 
+STAGE3_TABLES = {"transcript_segments", "clip_candidates"}
+
+
 def test_downgrade_one_and_upgrade_again(tmp_path: Path) -> None:
     url = _set_url(tmp_path / "m2.db")
     command.upgrade(alembic_config(), "head")
+    engine = create_engine(url)
+    assert DOMAIN_TABLES | STAGE3_TABLES <= set(inspect(engine).get_table_names())
+    engine.dispose()
+
+    # -1 drops only the latest revision (Stage 3 tables)
     command.downgrade(alembic_config(), "-1")
     engine = create_engine(url)
-    insp = inspect(engine)
-    assert not (DOMAIN_TABLES & set(insp.get_table_names()))
+    names = set(inspect(engine).get_table_names())
+    assert not (STAGE3_TABLES & names)
+    assert DOMAIN_TABLES <= names  # Stage 0/1 tables still there
     engine.dispose()
+
+    # base drops everything
+    command.downgrade(alembic_config(), "base")
+    engine = create_engine(url)
+    assert not (DOMAIN_TABLES | STAGE3_TABLES) & set(inspect(engine).get_table_names())
+    engine.dispose()
+
     command.upgrade(alembic_config(), "head")
     engine = create_engine(url)
-    assert DOMAIN_TABLES <= set(inspect(engine).get_table_names())
+    assert DOMAIN_TABLES | STAGE3_TABLES <= set(inspect(engine).get_table_names())
     engine.dispose()
 
 

@@ -128,3 +128,30 @@
 **GATE: GO** — texts API по CONTRACTS, fake зелёный, local конфигурируем, CPU fallback описан и покрыт unit (mock OOM→cpu), pytest зелёный.
 
 ---
+
+### T3.1 — faster-whisper транскрипция — DONE (2026-09-20)
+- Файлы: app/models/transcript.py + миграция 0002, app/services/transcription/whisper_service.py (extract wav 16k mono через ffmpeg_runner; lazy import faster-whisper (extras [whisper]); device auto→cuda/cpu; CUDA OOM → CPU int8 fallback; device_used в Job result; идемпотентность transcribe:{video_id}), app/schemas/transcription.py, app/api/v1/transcripts.py (POST 202 + GET transcript), workers/tasks.transcribe_task.
+- Тесты: unit 6 (device resolution, compute fallback, not-installed, happy-path mocked, CUDA-OOM→CPU mocked) + api 5 (202+segments saved, cached idempotency, 404, failed job при ffmpeg_missing, empty transcript). 
+- Статус: DONE.
+
+### T3.2 — Scene detection — DONE (2026-09-20)
+- Выбор: ffmpeg select gt(scene,0.4)+showinfo (ADR: без OpenCV/PySceneDetect); fallback равномерные окна 30с; границы в features кандидатов.
+- Тесты: unit fallback-границы; **реальный integration**: двухсценная синтетика, ffmpeg 7.0.2 нашёл разрез ~4с (3 passed: e2e render + 2 scene теста).
+- Статус: DONE.
+
+### T3.3 — Heuristic ai_clipping — DONE (2026-09-20)
+- Файлы: app/models/clip_candidate.py (+миграция 0002), app/services/ai_clipping/{features,heuristic_ranker,candidate_service}.py, app/schemas/ai_clipping.py, app/api/v1/candidates.py.
+- Реализовано §18: окна 15/30/45/60 шаг 5с; фичи speech_ratio/key_phrases(RU+EN в features.py)/tempo WPM bell 120-180/loudness RMS(audioop stdlib)/position(интро)/scene_alignment(±2с); веса AI_WEIGHTS_*; NMS IoU>0.5; top_k; POST candidates (регенерация заменяет), GET, POST promote → Clip draft.
+- Тесты: unit 12 (фичи детерминированы, IoU, NMS, веса конфигурируются, fallback) + api 7 (top_k, детерминизм, transcript_missing 409, promote→Clip, scene_fallback). Полный suite: **160 passed** + chain-тест gate.
+- Статус: DONE.
+
+### T3.4 — Аудит Stage 3 — DONE (2026-09-20)
+- Веса/пороги/ключевые фразы зафиксированы в CONTRACTS §4.12; scene-выбор и sandbox-ограничения — KNOWLEDGE §4; миграции 0002 up/-1/up OK; паритет миграции↔модели зелёный.
+
+## Stage 3 — REPORT (2026-09-20)
+**Изменения**: транскрипция (faster-whisper, device fallback), scene detection (ffmpeg select), эвристический подбор кандидатов (6 фич, веса из env, NMS, top_k) + promote, миграция 0002 (transcript_segments, clip_candidates).
+**Тесты**: `pytest -m "not real_services"` → **160 passed** (включая полный chain-тест upload→transcribe→candidates→promote→render→texts на моках); `RUN_REAL_INTEGRATION=1 pytest tests/integration` → **3 passed** (реальный ffmpeg: e2e render + scene cut). `scripts/verify_whisper.py` → SKIP (faster-whisper не установлен; HF egress заблокирован — модель не скачать).
+**Блокеры**: реальная транскрипция на GPU — машина пользователя (`pip install -e ".[whisper]"`, `scripts/verify_whisper.py`; CUDA OOM→CPU покрыт моком).
+**GATE: GO** — цепочка transcribe→scenes→candidates→promote→render→texts проходится (моки+синтетика+реальный ffmpeg для сцен/рендера), эвристики без обучения, pytest зелёный.
+
+---

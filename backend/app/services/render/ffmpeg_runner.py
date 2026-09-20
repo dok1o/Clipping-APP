@@ -183,3 +183,32 @@ def render_vertical(
         )
     if not Path(dst).exists() or Path(dst).stat().st_size == 0:
         raise RenderError("render_failed", "ffmpeg produced no output file")
+
+
+def extract_audio_wav(
+    src: str | Path,
+    dst: str | Path,
+    *,
+    ffmpeg_path: str | None = None,
+    timeout_sec: int | None = None,
+) -> None:
+    """Extract 16kHz mono WAV (whisper input) — same binary-gateway rules."""
+    settings = get_settings()
+    binary = ffmpeg_path or settings.ffmpeg_path
+    cmd = [
+        binary, "-y",
+        "-i", str(src),
+        "-vn", "-ac", "1", "-ar", "16000",
+        str(dst),
+    ]
+    try:
+        completed = subprocess.run(  # noqa: S603 (list-args, no shell)
+            cmd, capture_output=True, text=True,
+            timeout=timeout_sec or settings.ffmpeg_timeout_sec, check=False, shell=False,
+        )
+    except FileNotFoundError as exc:
+        raise RenderError("ffmpeg_missing", f"ffmpeg binary not found: {cmd[0]}") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RenderError("render_timeout", "audio extraction timed out") from exc
+    if completed.returncode != 0 or not Path(dst).exists():
+        raise RenderError("audio_extract_failed", "failed to extract audio", _tail(completed.stderr))

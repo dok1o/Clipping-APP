@@ -46,3 +46,21 @@ def render_task(job_id: str | UUID) -> dict:
     except Exception as exc:  # noqa: BLE001 — task must not crash the worker
         logger.exception("render task failed")
         return {"job_id": job_id, "status": "failed", "error": str(exc)[:500]}
+
+
+@celery_app.task(name="app.workers.tasks.transcribe_task")
+def transcribe_task(job_id: str | UUID) -> dict:
+    """Transcription wrapper (lifecycle lives in whisper_service)."""
+    from app.services.transcription.whisper_service import execute_transcription_job
+
+    job_id = str(job_id)
+
+    def body(db, storage, _settings):
+        job = execute_transcription_job(db, storage, UUID(job_id))
+        return {"job_id": job_id, "status": job.status, "result": job.result}
+
+    try:
+        return _run_with_session(body)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("transcribe task failed")
+        return {"job_id": job_id, "status": "failed", "error": str(exc)[:500]}

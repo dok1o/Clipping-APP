@@ -38,6 +38,9 @@
 
 ## 4. ffmpeg (спецификация рендера)
 
+- **Scene detection (выбор зафиксирован 2026-09-20)**: ffmpeg `select='gt(scene,0.4)',showinfo` с парсингом pts_time из stderr (PySceneDetect отвергнут: тянет OpenCV). Fallback — равномерные окна 30с. **Реальная проверка**: двухсценная синтетика (testsrc→color cut на 4s), `RUN_REAL_INTEGRATION=1 pytest tests/integration` → граница найдена на ~4с (3 passed).
+- faster-whisper: модель скачать в песочнице нельзя (huggingface.co и openaipublic.azureedge.net — egress заблокирован, проверено 2026-09-20 curl'ом) → `scripts/verify_whisper.py` даёт честный SKIP; на реальной машине: `pip install -e ".[whisper]"` + `python scripts/verify_whisper.py`.
+
 - Фильтр `scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1`; `-ss` до `-i` (быстрый seek) + `-t` после (точная обрезка); `-c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -pix_fmt yuv420p -movflags +faststart -r 30`.
 - Проверка на реальной машине: `./.venv/bin/python scripts/verify_ffmpeg.py` (генерирует синтетику `testsrc`+`sine`, рендерит 1с, проверяет выход ffprobe'ом: 1080x1920 / h264 / aac / yuv420p).
 - **2026-09-20: реальный рендер подтверждён в песочнице.** ffmpeg 7.0.2-static получен из PyPI-пакета `imageio-ffmpeg` (GitHub egress заблокирован, apt-источники урезаны; FFPROBE отсутствует → duration при загрузке = null, что соответствует спецификации). Прогоны:
