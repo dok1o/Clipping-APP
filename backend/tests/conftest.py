@@ -65,6 +65,8 @@ def engine(db_path: Path):
 
 @pytest.fixture
 def db(engine):
+    from app.db import session as db_session
+
     session = db_session.session_factory()
     try:
         yield session

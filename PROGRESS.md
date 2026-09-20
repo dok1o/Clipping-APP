@@ -34,3 +34,9 @@
 - Решения: FK-политики по ADR-FK (clips→videos RESTRICT, rendered_assets→clips CASCADE, publications→clips RESTRICT / →assets SET NULL / →accounts RESTRICT); partial unique uq_publications_active (clip_id,platform) WHERE status NOT IN (cancelled,failed); CheckConstraint имена в миграциях передаются короткими (`name="status"`), т.к. alembic применяет convention `ck_%(table)s_%(constraint_name)s` (нашёл через parity-тест); явный `from sqlalchemy.dialects import postgresql` в моделях (нашёл через прямой импорт: скрытая зависимость от порядка импортов).
 - Тесты: `pytest tests/` → **22 passed**: upgrade head/-1/up; паритет «миграции ↔ Base.metadata» (колонки/уникальные/индексы/FK/CHECK); CHECK-статусы; FK RESTRICT/CASCADE/SET NULL; partial unique; idempotency unique; defaults.
 - Статус: DONE.
+
+### T0.4 — Celery/Redis foundation + Job wiring — DONE (2026-09-20)
+- Файлы: app/infra/queue.py (Celery app, eager при APP_ENV=test/CELERY_TASK_ALWAYS_EAGER — ADR-013), app/workers/{celery_app,tasks}.py (ping), app/schemas/{__init__,common,job}.py, app/api/v1/jobs.py (GET /api/v1/jobs/{id}), tests/api/test_jobs.py.
+- Решения: DateTimeUtc — сериализация дат ISO8601 с Z через PlainSerializer; JobRead.type читается из ORM-атрибута job_type (validation_alias).
+- Тесты: `pytest tests/` → **27 passed**: GET job 200/404/422(validation_error, единый формат), eager ping → "pong", celery conf eager=True. Живой Redis не требуется (DoD «с живым Redis — тоже или SKIP» → в песочнице нет Redis: eager-режим подтверждён, реальный broker-коннект — scripts/verify_db_redis.py на реальной машине).
+- Статус: DONE.
