@@ -1,6 +1,6 @@
 # AI Clipper
 
-Локальный self-hosted AI Clipper: длинное видео → вертикальные клипы 1080x1920 для YouTube Shorts / TikTok с заголовками, описаниями, хэштегами, субтитрами → публикация вручную/по расписанию → метрики через официальные API → самообучение на лучших моментах.
+Локальный self-hosted AI Clipper: длинное видео → вертикальные клипы 1080x1920 для TikTok (первая платформа) и YouTube Shorts (вторая, Stage 8) с заголовками, описаниями, хэштегами, субтитрами → публикация вручную/по расписанию → метрики через официальные API → самообучение на лучших моментах.
 
 Стек: FastAPI + SQLAlchemy 2 + Alembic + Celery/Redis + PostgreSQL + MinIO (S3) + ffmpeg + faster-whisper + локальная LLM; фронтенд React+Vite+Tailwind. Только open-source, нулевой бюджет, single-user.
 
@@ -14,6 +14,8 @@
 - `PROGRESS.md` — журнал Stage/тикетов
 
 ## Quickstart (с нуля)
+
+Платформы: **TikTok** — Content Posting API (Direct Post) + Display API (метрики); **YouTube** — Data API v3 (videos.insert resumable + videos.list statistics). Только официальные API, ключи через env (`TIKTOK_*`, `YOUTUBE_*` в `.env`), credentials аккаунтов шифруются Fernet. Проверка интеграций: `python scripts/verify_platform.py` (TikTok) и `python scripts/verify_youtube.py` — `--dry-run` безопасен везде, `--real` на машине с ключами.
 
 ```bash
 # 0) окружение
