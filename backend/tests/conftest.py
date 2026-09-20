@@ -16,7 +16,20 @@ from cryptography.fernet import Fernet  # noqa: E402
 
 os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite:////tmp/clipper-test-default.db")
-os.environ.setdefault("S3_ENDPOINT", "http://127.0.0.1:9")
+
+# --- in-process moto S3 HTTP server, started BEFORE app.* imports so that
+# settings (and therefore API, eager tasks and health checks) all point at it ---
+from moto.server import create_backend_app  # noqa: E402
+from werkzeug.serving import make_server  # noqa: E402
+
+_moto_app = create_backend_app("s3")
+_moto_server = make_server("127.0.0.1", 0, _moto_app)
+MOTO_S3_URL = f"http://127.0.0.1:{_moto_server.server_port}"
+import threading as _threading  # noqa: E402
+
+_threading.Thread(target=_moto_server.serve_forever, daemon=True).start()
+
+os.environ["S3_ENDPOINT"] = MOTO_S3_URL
 os.environ.setdefault("S3_ACCESS_KEY", "test-access-key")
 os.environ.setdefault("S3_SECRET_KEY", "test-secret-key")
 os.environ.setdefault("S3_BUCKET", "clipper-test")
@@ -26,8 +39,6 @@ os.environ.setdefault("CELERY_TASK_ALWAYS_EAGER", "1")
 os.environ.setdefault("LLM_BACKEND", "fake")
 
 import pytest  # noqa: E402
-
-from app.api.deps import get_storage  # noqa: E402
 from alembic import command  # noqa: E402
 from alembic.config import Config as AlembicConfig  # noqa: E402
 import threading  # noqa: E402
@@ -80,37 +91,14 @@ def db(engine):
         session.close()
 
 
-@pytest.fixture(scope="session")
-def s3_server_url():
-    """In-process moto S3 server (real HTTP on 127.0.0.1:<random port>).
-
-    moto's mock_aws does not intercept clients with a custom endpoint_url
-    (which our MinIO-style storage requires), so we run the real thing.
-    """
-    from moto.server import create_backend_app
-
-    app = create_backend_app("s3")
-    server = make_server("127.0.0.1", 0, app)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        yield f"http://127.0.0.1:{server.server_port}"
-    finally:
-        server.shutdown()
-
-
 @pytest.fixture
-def s3_mock(s3_server_url):
+def s3_mock():
+    """Storage bound to the in-process moto server (settings-driven: shared by
+    API endpoints, eager Celery tasks and health checks alike)."""
+    from app.core.config import get_settings
     from app.infra.s3 import S3Storage
 
-    storage = S3Storage(
-        endpoint_url=s3_server_url,
-        region="us-east-1",
-        bucket="clipper-test",
-        access_key="test-access-key",
-        secret_key="test-secret-key",
-        use_ssl=False,
-    )
+    storage = S3Storage.from_settings(get_settings())
     storage.ensure_bucket()
     yield storage
 
@@ -120,7 +108,6 @@ def client(engine, s3_mock):
     """API client bound to the per-test sqlite engine + moto S3 server."""
     from app.main import app
 
-    app.dependency_overrides[get_storage] = lambda: s3_mock
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()

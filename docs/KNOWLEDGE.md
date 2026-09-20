@@ -33,7 +33,10 @@
 
 - Фильтр `scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1`; `-ss` до `-i` (быстрый seek) + `-t` после (точная обрезка); `-c:v libx264 -preset veryfast -crf 23 -c:a aac -b:a 128k -pix_fmt yuv420p -movflags +faststart -r 30`.
 - Проверка на реальной машине: `./.venv/bin/python scripts/verify_ffmpeg.py` (генерирует синтетику `testsrc`+`sine`, рендерит 1с, проверяет выход ffprobe'ом: 1080x1920 / h264 / aac / yuv420p).
-- В песочнице 2026-09-20: SKIP (бинари отсутствуют) — см. PROGRESS.
+- **2026-09-20: реальный рендер подтверждён в песочнице.** ffmpeg 7.0.2-static получен из PyPI-пакета `imageio-ffmpeg` (GitHub egress заблокирован, apt-источники урезаны; FFPROBE отсутствует → duration при загрузке = null, что соответствует спецификации). Прогоны:
+  - `FFMPEG_PATH=<imageio-ffmpeg> python scripts/verify_ffmpeg.py` → **RESULT: PASS** (синтетика 1280x720 → рендер 1с → выход 1080x1920 / h264 / aac / yuv420p / faststart moov@36<mdat@2515; probe через fallback-парсер `ffmpeg -i`).
+  - `RUN_REAL_INTEGRATION=1 pytest tests/integration` → **1 passed** (e2e: upload настоящего mp4 → clip → render через API+worker → asset ready 1080x1920 → presigned download валидный MP4).
+- `imageio-ffmpeg` НЕ входит в зависимости проекта (только удобный способ достать бинаррь в песочнице); на реальной машине — системный ffmpeg/ffprobe.
 
 ## 5. Известные ограничения платформенных API (черновик — уточнить при T1.4)
 

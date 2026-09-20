@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.schemas.clip import ClipCreate, ClipPage, ClipRead
+from app.schemas.job import JobRead
 from app.services.clips import clip_service
+from app.services.render import render_service
 
 router = APIRouter(tags=["clips"])
 
@@ -32,3 +34,14 @@ def list_clips(
 @router.get("/clips/{clip_id}", response_model=ClipRead)
 def get_clip(clip_id: uuid.UUID, db: Session = Depends(get_db)):
     return clip_service.get_clip_or_404(db, clip_id)
+
+
+@router.post("/clips/{clip_id}/render", status_code=202, response_model=JobRead)
+def render_clip(clip_id: uuid.UUID, db: Session = Depends(get_db)) -> JobRead:
+    """Queue a vertical render (CONTRACTS §4.7). Eager Celery runs it in-process in dev/tests."""
+    job, clip_status = render_service.queue_render(db, clip_id)
+    if clip_status == "render_queued":
+        from app.workers.tasks import render_task
+
+        render_task.delay(job.id)
+    return JobRead.model_validate(job)
