@@ -110,3 +110,21 @@
 **GATE: GO** — все эндпоинты §10 работают по контрактам (TestClient-доказательства), render spec соблюдён и подтверждён реальным ffmpeg, публикация на 1 платформу через официальный API (fake+mock+dry-run доказательства + дока по ключам), pytest зелёный, аудит чист.
 
 ---
+
+### T2.1+T2.2 — Text gen provider boundary + platform texts + API — DONE (2026-09-20)
+- Файлы: app/services/text_gen/{base,fake_provider,local_provider,text_service}.py, app/schemas/text_gen.py, app/api/v1/texts.py, tests/{unit/test_text_gen,api/test_texts}.py.
+- Решения: единственный реальный backend — ollama (/api/chat, format=json; OOM → ретрай num_gpu=0 = CPU fallback, unit-покрыто; llamacpp/transformers — честные not_implemented); тексты хранятся в Job(text_gen).result — контракт GET/POST переживёт переход на async в Stage 5; лимиты YouTube(100/5000/500)/TikTok(2200) из официальных доков.
+- Тесты: unit 12 (fake детерминирован, markdown-fenced JSON, лимиты платформ, ollama happy/OOM→cpu/unreachable/http-error/stubs) + api 8 (200 с лимитами, youtube vs tiktok, transcript+tone, roundtrip GET, 404/422/502+failed Job). Полный suite: **129 passed**.
+- Статус: DONE.
+
+### T2.3 — Аудит Stage 2 — DONE (2026-09-20)
+- VRAM-замер: SKIP (нет GPU/ollama в песочнице) — задокументировано в KNOWLEDGE с командами проверки на реальной машине. CONTRACTS §4.12 обновлён реализацией.
+- Статус: DONE.
+
+## Stage 2 — REPORT (2026-09-20)
+**Изменения**: text_gen домен (provider boundary + fake + ollama + stubs), structured JSON с ретраем, платформенные лимиты, API generate/get, Job-хранение текстов.
+**Тесты**: `pytest -m "not real_services"` → **129 passed**.
+**Блокеры**: реальный прогон ollama-провайдера — на машине пользователя (команды в KNOWLEDGE §3).
+**GATE: GO** — texts API по CONTRACTS, fake зелёный, local конфигурируем, CPU fallback описан и покрыт unit (mock OOM→cpu), pytest зелёный.
+
+---

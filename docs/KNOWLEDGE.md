@@ -34,6 +34,7 @@
 - **faster-whisper**: default `small`, `int8_float16` на GPU, `int8` на CPU; beam 1–5; VAD опц. Память small/int8 ≈ 1GB — влезает в 8GB. Проверить на GPU-машине: `scripts/verify_whisper.py` (Stage 3).
 - **Локальный LLM**: квантованная 7–8B instruct (Qwen2.5-7B-Instruct Q4_K_M / Mistral-7B Q4 / Llama-3.1-8B Q4), ~4.5–5.5GB VRAM в Q4. 8GB VRAM → whisper и LLM загружаются ТОЛЬКО последовательно с освобождением памяти (`torch.cuda.empty_cache()`/unload). CPU fallback обязателен (OOM → catch → cpu, фиксировать в Job result `device_used`).
 - ML Stage 7: scikit-learn на CPU, артефакты joblib.
+- **2026-09-20 (Stage 2 аудит)**: замер VRAM/времени локальной LLM в песочнице НЕВЫПОЛНИМ (нет GPU, нет ollama, egress только PyPI/npm) — честный SKIP. Проверить на реальной машине: `ollama pull qwen2.5:7b-instruct-q4_K_M` (или mistral:7b / llama3.1:8b Q4), затем POST /api/v1/texts/generate с LLM_BACKEND=ollama; ожидание: Q4 7-8B ≈ 4.5-5.5GB VRAM, Sequential с whisper (не одновременно), CPU fallback покрыт unit-тестом (OOM → num_gpu=0).
 
 ## 4. ffmpeg (спецификация рендера)
 

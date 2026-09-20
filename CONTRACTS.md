@@ -217,7 +217,10 @@
 - `metadata` в ответе — Publication.meta (title/description/privacy).
 
 ### 4.12 Будущие эндпоинты (фиксация)
-- Stage 2: `POST /api/v1/texts/generate` → `{"job_id": null, "texts": {…}}` (Stage 2 синхронно; Stage 5 — через Job, контракт сохраняет оба поля); `GET /api/v1/clips/{id}/texts?platform=`.
+- Stage 2 (реализовано): `POST /api/v1/texts/generate` body `{"clip_id", "platform": "youtube|tiktok", "tone"?, "transcript"?}` → 200 `{"job_id": null, "texts": {"titles": [3], "description", "hashtags"}, "captions_srt", "platform"}` (Stage 2 синхронно, job_id=null; Stage 5 — через Job, контракт сохраняет оба поля). Ошибки: 404 `clip_not_found`, 422 (platform), 502 `text_gen_error` (провайдер недоступен/invalid JSON после 1 ретрая; создаётся Job text_gen failed с error_message).
+  - `GET /api/v1/clips/{id}/texts?platform=` → 200 `{clip_id, platform, texts|null}` — тексты читаются из последнего succeeded Job(type=text_gen).result (хранение без отдельной таблицы; единый контракт для sync/async).
+  - Провайдеры: `LLM_BACKEND=fake` (детерминированный, default) | `ollama` (реальный локальный, /api/chat format=json, OOM→retry num_gpu=0 = CPU fallback, фиксируется device_used) | `llamacpp`/`transformers` (честные not_implemented).
+  - Лимиты: YouTube title ≤100, description ≤5000, tags total ≤500; TikTok title/caption ≤2200 (официальный лимит, KNOWLEDGE §2), hashtags 3–8 с авто-«#».
 - Stage 3: `POST /api/v1/videos/{id}/transcribe` → 202+Job; `GET /api/v1/videos/{id}/transcript`; `POST /api/v1/videos/{id}/candidates?top_k=5`; `POST /api/v1/candidates/{id}/promote`.
 - Stage 5: Beat/расписание, rate limits, Redis-lock, `reconcile_stuck_jobs`.
 - Stage 6: `POST /api/v1/publications/{id}/sync-metrics` → 202; `GET /api/v1/publications/{id}/metrics`.
