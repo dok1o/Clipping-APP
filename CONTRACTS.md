@@ -200,15 +200,21 @@
  "created_at": "…", "updated_at": "…"}
 ```
 
-### 4.11 Публикации (Stage 1.4, контракт зафиксирован)
+### 4.11 Публикации (реализовано в Stage 1.4; первая платформа — TikTok, выбор пользователя 2026-09-20)
 - `POST /api/v1/publications/manual` body:
 ```json
-{"clip_id": "…", "platform": "youtube", "platform_account_id": "…", "title": "…",
+{"clip_id": "…", "platform": "tiktok", "platform_account_id": "…", "title": "…",
  "description": "…", "privacy": "public", "scheduled_at": null}
 ```
-→ 201 PublicationRead (status `uploading` при немедленной загрузке | `scheduled` при `scheduled_at`). Ошибки: `404 clip_not_found | asset_not_found | account_not_found`, `409 duplicate_publication`, `422 validation_error`, `502 platform_error` (с last_error без секретов).
-- `GET /api/v1/publications?clip_id=&platform=`, `GET /api/v1/publications/{id}` → 200/404.
-- Идемпотентность: unique `idempotency_key`; повторный POST с тем же ключом → 409 `duplicate_publication` (фиксация).
+→ 201 PublicationRead (status `published` при успешной немедленной загрузке | `scheduled` при `scheduled_at` — публикация отложена до Stage 5 worker). Ошибки: `404 clip_not_found | asset_not_found | account_not_found`, `409 duplicate_publication`, `422 validation_error` (platform mismatch/privacy), `502 platform_error` (Publication → failed + last_error без секретов).
+- `GET /api/v1/publications?clip_id=&platform=`, `GET /api/v1/publications/{id}` → 200/404 (`publication_not_found`).
+- **Идемпотентность (фиксация)**: `idempotency_key = {clip_id}:{platform}:{asset_id}:{sha256(title)[:12]}`; повторный POST с тем же ключом → 409 `duplicate_publication`. Retry после `failed` — новый ключ (другой title) разрешён; `failed`/`cancelled` не блокируют (partial unique).
+- **Privacy-маппинг (TikTok)**: `public→PUBLIC_TO_EVERYONE`, `unlisted→MUTUAL_FOLLOW_FRIENDS` (у TikTok нет unlisted), `private→SELF_ONLY`. Значение обязано входить в `privacy_level_options` creator'а (иначе платформа отклонит).
+- **Credentials**: `PlatformAccount.credentials_encrypted` = Fernet(JSON `{"access_token": "...", ...}`). В API — всегда `"***"`. Управление аккаунтами:
+  - `POST /api/v1/platform-accounts` body `{"platform", "external_account_id", "display_name"?, "credentials": {...}, "scopes"?}` → 201 (credentials=`"***"`).
+  - `GET /api/v1/platform-accounts` → `{"items": [...], "total": N}`.
+- **TikTok адаптер** (только по официальным докам, см. KNOWLEDGE §2 с URL и датами): Direct Post `POST /v2/post/publish/video/init/` (scope `video.publish`, FILE_UPLOAD) → `PUT {upload_url}` (Content-Range) → `POST /v2/post/publish/status/fetch/` до `PUBLISH_COMPLETE|FAILED`; title ≤2200 симв; unaudited app → посты только приватные (платформа вернёт 403 `unaudited_client_can_only_post_to_private_accounts`).
+- `metadata` в ответе — Publication.meta (title/description/privacy).
 
 ### 4.12 Будущие эндпоинты (фиксация)
 - Stage 2: `POST /api/v1/texts/generate` → `{"job_id": null, "texts": {…}}` (Stage 2 синхронно; Stage 5 — через Job, контракт сохраняет оба поля); `GET /api/v1/clips/{id}/texts?platform=`.

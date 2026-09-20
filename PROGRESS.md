@@ -85,3 +85,28 @@
 - Реальные проверки (не моки!): `verify_ffmpeg.py` → **PASS** (ffmpeg 7.0.2 из imageio-ffmpeg): выход 1080x1920/h264/aac/yuv420p/faststart. `RUN_REAL_INTEGRATION=1 pytest tests/integration` → **1 passed** — полный e2e: upload настоящего mp4 → manual clip → render через API (Celery-eager worker) → RenderedAsset ready → presigned download → валидный MP4 (ftyp).
 - Тесты мок-уровня: args/порядок/фильтр, timeout/missing-binary/nonzero-exit/empty-output/invalid-timestamps, lifecycle + идемпотентность + 409 + retry-after-fail, presigned. Полный suite: **93 passed** (not real_services) + 1 real integration PASS.
 - Статус: DONE.
+
+### T1.4 — Ручная публикация TikTok (платформа выбрана пользователем) — DONE (2026-09-20)
+- Исследование официальных доков выполнено ДО реализации (§0.8): 3 официальные страницы TikTok Content Posting API (direct-post, status/fetch, creator_info) — URL + дата + ограничения в docs/KNOWLEDGE.md §2. Выбор: FILE_UPLOAD (self-hosted, публичного верифицированного URL нет); privacy-маппинг public/unlisted/private → PUBLIC_TO_EVERYONE/MUTUAL_FOLLOW_FRIENDS/SELF_ONLY.
+- Файлы: app/services/publish/{base,tiktok,publish_service}.py (Publisher Protocol + registry; идемпотентность {clip_id}:{platform}:{asset_id}:{sha256(title)[:12]}; Fernet credentials; scheduled_at → scheduled без немедленной публикации), app/schemas/publication.py (+PlatformAccount), app/api/v1/publications.py (+ platform-accounts CRUD-минимум), tests/{fakes.py,unit/test_tiktok_publisher.py,api/test_publications.py}, scripts/verify_platform.py.
+- Тесты: адаптер против httpx.MockTransport (init/upload/status flow, Content-Range, privacy_level, error-code propagation, title 2200 лимит); API: 201 published (credentials "***", в БД зашифрованы), 409 duplicate, 502 platform_error → Publication failed + retry разрешён, scheduled без вызова publisher, 404 clip/asset/account, 422 platform mismatch. `scripts/verify_platform.py --dry-run` → PASS; `--real` → SKIP (нет ключей, ожидаемо).
+- Полный suite: **109 passed** (not real_services).
+- Статус: DONE.
+
+### T1.5 — Аудит Stage 1 — DONE (2026-09-20)
+- Secrets/boto3/shell=True/create_all/artifacts greps: CLEAN. Миграции up/-1/up: OK. Real ffmpeg e2e (integration): **1 passed**.
+- Статус: DONE.
+
+---
+
+## Stage 1 — REPORT (2026-09-20)
+
+**Изменения**: upload (стрим → S3, валидации 413/415/400, ffprobe-опциональность), manual clip (timestamp-only, без медиа-бинарей — доказано grep+mock), вертикальный рендер 1080x1920 H.264+AAC+yuv420p+faststart через Job lifecycle с идемпотентностью, ручная публикация TikTok через официальный Content Posting API (FILE_UPLOAD), platform-accounts с Fernet, verify-скрипты.
+
+**Тесты**: `pytest -m "not real_services"` → **109 passed**; `RUN_REAL_INTEGRATION=1 pytest tests/integration` → **1 passed** (настоящий ffmpeg e2e: upload→clip→render→download MP4); `scripts/verify_ffmpeg.py` → **PASS** (ffmpeg 7.0.2 из imageio-ffmpeg в песочнице); `scripts/verify_platform.py --dry-run` → **PASS**.
+
+**Блокеры/не проверено в песочнице**: реальная публикация в TikTok (нужны ключи + audited app; `verify_platform.py --real` на машине пользователя); ffprobe-метаданные при загрузке (нет бинаря ffprobe — duration=null по спецификации, на реальной машине с ffprobe заполнится); живой Redis для Celery (eager-режим покрыт тестами).
+
+**GATE: GO** — все эндпоинты §10 работают по контрактам (TestClient-доказательства), render spec соблюдён и подтверждён реальным ffmpeg, публикация на 1 платформу через официальный API (fake+mock+dry-run доказательства + дока по ключам), pytest зелёный, аудит чист.
+
+---
