@@ -13,7 +13,7 @@
 
 - **2026-09-20 (T0.1)**: В репозитории обнаружена частичная реализация предыдущего (Codex) промпта (коммит e3b2d9f «feat: add vertical clip rendering flow») с неканонической структурой (`app/ingestion|video_effects|...`, без `/api/v1`, без Job/PlatformAccount/Publication по §8, без MASTER_SPEC). Решение: пересборка по канону §5 с нуля; старый код сохранён в git-истории, история не переписывалась. ADR-000 в ARCHITECTURE.md. Файл `docs/codex-master-prompt-ai-clipper.md` (документ пользователя) сохранён.
 - **2026-09-20 (T0.1)**: Sandbox-ограничения (см. docs/KNOWLEDGE.md §1): нет ffmpeg/ffprobe, нет Docker/PG/Redis/MinIO, нет GPU. Стратегия: основной pytest-сьют на SQLite+moto+Celery-eager; реальные проверки — scripts/verify_*.py с честным SKIP + список проверок на реальной машине в README.
-- **Единственная обязательная остановка**: перед T1.4 — вопрос пользователю «YouTube или TikTok первой?».
+- **2026-09-20 (решение пользователя до T1.4)**: первая платформа — **TikTok** (Content Posting API); YouTube — вторая, подключается позже без рефакторинга ядра (интерфейс Publisher). Выбор дан пользователем заранее, остановка перед T1.4 снята; далее работа полностью автономна.
 
 ## Лог тикетов
 

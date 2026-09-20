@@ -57,6 +57,8 @@ def db_path(tmp_path: Path, migrated_template: Path) -> Path:
 
 @pytest.fixture
 def engine(db_path: Path):
+    from app.db import session as db_session
+
     url = f"sqlite+pysqlite:///{db_path}"
     db_session.init_engine(url)
     yield db_session.get_engine()
@@ -93,13 +95,8 @@ def s3_mock():
 
 
 @pytest.fixture
-def client():
-    """Minimal API client (no DB/S3 isolation).
-
-    Tests that touch the database or storage declare `engine` / `s3_mock`
-    fixtures explicitly — they rebind the shared session factory / moto stack
-    before the test body issues requests.
-    """
+def client(engine):
+    """API client bound to the per-test sqlite engine (migrations applied)."""
     from app.main import app
 
     with TestClient(app) as test_client:
