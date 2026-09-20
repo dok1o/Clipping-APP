@@ -28,3 +28,9 @@
 - Решения: статусы БД = varchar+CHECK (ADR-003); celery eager по умолчанию при APP_ENV=test (ADR-013); app/db.session и infra/s3 лениво импортируются из main.py (health-check «skip» до T0.3/T0.5); client-фикстура не зависит от БД/S3 (развязка тикетов).
 - Тесты: `pytest tests/api/test_health.py tests/unit/test_config.py` → 5 passed; uvicorn smoke: `python -m uvicorn app.main:app` → GET /health = 200 {"status":"ok","version":"0.1.0",checks:{db,redis,s3}} (uvicorn лог приложен в чат).
 - Статус: DONE.
+
+### T0.3 — SQLAlchemy 2.x + Alembic + base models — DONE (2026-09-20)
+- Файлы: app/db/{__init__,base,session}.py; app/models/{video,clip,job,rendered_asset,platform_account,publication}.py; alembic/{alembic.ini,env.py,script.py.mako,versions/0001_initial.py}; tests/unit/{test_migrations,test_models}.py; PRAGMA foreign_keys=ON для SQLite в init_engine (иначе FK не проверялись бы).
+- Решения: FK-политики по ADR-FK (clips→videos RESTRICT, rendered_assets→clips CASCADE, publications→clips RESTRICT / →assets SET NULL / →accounts RESTRICT); partial unique uq_publications_active (clip_id,platform) WHERE status NOT IN (cancelled,failed); CheckConstraint имена в миграциях передаются короткими (`name="status"`), т.к. alembic применяет convention `ck_%(table)s_%(constraint_name)s` (нашёл через parity-тест); явный `from sqlalchemy.dialects import postgresql` в моделях (нашёл через прямой импорт: скрытая зависимость от порядка импортов).
+- Тесты: `pytest tests/` → **22 passed**: upgrade head/-1/up; паритет «миграции ↔ Base.metadata» (колонки/уникальные/индексы/FK/CHECK); CHECK-статусы; FK RESTRICT/CASCADE/SET NULL; partial unique; idempotency unique; defaults.
+- Статус: DONE.
