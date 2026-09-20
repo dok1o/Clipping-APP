@@ -40,3 +40,9 @@
 - Решения: DateTimeUtc — сериализация дат ISO8601 с Z через PlainSerializer; JobRead.type читается из ORM-атрибута job_type (validation_alias).
 - Тесты: `pytest tests/` → **27 passed**: GET job 200/404/422(validation_error, единый формат), eager ping → "pong", celery conf eager=True. Живой Redis не требуется (DoD «с живым Redis — тоже или SKIP» → в песочнице нет Redis: eager-режим подтверждён, реальный broker-коннект — scripts/verify_db_redis.py на реальной машине).
 - Статус: DONE.
+
+### T0.5 — S3 abstraction + crypto — DONE (2026-09-20)
+- Файлы: app/infra/s3.py (S3Storage: ensure_bucket/head_bucket/upload_file/upload_fileobj/download_to_file/get_object_bytes/exists/delete_object/presigned_get; boto3 только здесь), app/infra/crypto.py (реэкспорт core/security, ADR-008), tests/unit/{test_s3,test_crypto,test_audit_rules}.py.
+- Решение (факт в KNOWLEDGE §6): moto 5.2.3 `mock_aws` НЕ перехватывает клиентов с кастомным endpoint_url (реальный сетевой запрос к хосту) → тесты используют in-process moto HTTP-сервер (moto[server], flask) на 127.0.0.1:random_port — boto3 exercised полностью, включая path-style addressing.
+- Тесты: `pytest tests/` → **43 passed**: S3 roundtrip (upload/download/bytes/exists/delete/presigned/ensure_bucket idempotent), Fernet roundtrip + tamper + missing key + маскировка + реэкспорт, аудит-правила (boto3 только в infra/s3.py; нет shell=True/os.system; нет create_all в app; нет секретоподобных литералов).
+- Статус: DONE.

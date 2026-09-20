@@ -28,8 +28,9 @@ os.environ.setdefault("LLM_BACKEND", "fake")
 import pytest  # noqa: E402
 from alembic import command  # noqa: E402
 from alembic.config import Config as AlembicConfig  # noqa: E402
+import threading  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-from moto import mock_aws  # noqa: E402
+from werkzeug.serving import make_server  # noqa: E402
 
 
 
@@ -77,21 +78,39 @@ def db(engine):
         session.close()
 
 
-@pytest.fixture
-def s3_mock():
-    with mock_aws():
-        from app.infra.s3 import S3Storage
+@pytest.fixture(scope="session")
+def s3_server_url():
+    """In-process moto S3 server (real HTTP on 127.0.0.1:<random port>).
 
-        storage = S3Storage(
-            endpoint_url="http://test",
-            region="us-east-1",
-            bucket="clipper-test",
-            access_key="test-access-key",
-            secret_key="test-secret-key",
-            use_ssl=False,
-        )
-        storage.ensure_bucket()
-        yield storage
+    moto's mock_aws does not intercept clients with a custom endpoint_url
+    (which our MinIO-style storage requires), so we run the real thing.
+    """
+    from moto.server import create_backend_app
+
+    app = create_backend_app("s3")
+    server = make_server("127.0.0.1", 0, app)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}"
+    finally:
+        server.shutdown()
+
+
+@pytest.fixture
+def s3_mock(s3_server_url):
+    from app.infra.s3 import S3Storage
+
+    storage = S3Storage(
+        endpoint_url=s3_server_url,
+        region="us-east-1",
+        bucket="clipper-test",
+        access_key="test-access-key",
+        secret_key="test-secret-key",
+        use_ssl=False,
+    )
+    storage.ensure_bucket()
+    yield storage
 
 
 @pytest.fixture
