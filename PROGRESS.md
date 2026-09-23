@@ -341,7 +341,7 @@ GATE: GO
 Структура: без продуктового кода (гейт CR-0 сохранён).
 API/schema changes: только контракты (CONTRACTS ЧАСТЬ CR v2).
 Dependencies: нет.
-Tests и фактический вывод: baseline после восстановления — см. ниже фактический вывод этого прогона (backend/frontend/typecheck).
+Tests и фактический вывод (фактический прогон песочницы после восстановления, fallback-режим без ffprobe): `pytest -m "not real_services"` → **206 passed, 3 deselected**; `npm run test` → **Test Files 4 passed (4), Tests 19 passed (19)**; `npm run typecheck` → OK; `npm run build` → built in 1.99s. Ожидание для checkout после pull: 209 тестов суммарно, 206 в not real_services (Stage 10 добавил 7).
 Visual/runtime verification: внешние факты — fetch официальных страниц (URL+даты в KNOWLEDGE §7–§8).
 Git status --short: чисто после коммитов.
 Known limitations: полная ревизия docs.whop.com/llms.txt (32 чанка) — до CR-4 автоматизации; живые скриншоты — на машине пользователя.
