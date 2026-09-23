@@ -5,7 +5,7 @@
 
 ## Текущий этап
 
-`CR-0 v2 — Content Rewards: контракты доставлены в репозиторий (ветка запушена); ожидается согласование пользователем → CR-1` (Stage 0–10 завершены; Stage 11–14 исходного плана — после CR-ветки)
+`CR-0 v2.1 — три дефекта ревью v2 исправлены в контрактах (термы не дублируются в reward_campaigns; все суммы NUMERIC(14,2) + fee_amount_expected; expired только из submission_required); ожидается согласование v2.1 → CR-1` (Stage 0–10 завершены; Stage 11–14 исходного плана — после CR-ветки)
 
 ---
 
@@ -354,3 +354,23 @@ Git status --short: чисто после коммитов.
 Known limitations: полная ревизия docs.whop.com/llms.txt (32 чанка) — до CR-4 автоматизации; живые скриншоты — на машине пользователя.
 Blockers: нет.
 **GATE: NO-GO→исправлено** — v1 отклонена ревью (артефакты отсутствовали в репозитории); v2 доставлена пушем ветки. **Код CR-1 — по-прежнему только после согласования пользователем контракта v2.**
+
+
+## CR-0 — REPORT v2.1 (2026-09-23, три дефекта по ревью контракта v2)
+
+Ревью пользователя отклонило переход к CR-1 с тремя контрактными дефектами (gate NO-GO). Все три исправлены в ЧАСТИ CR (CONTRACTS.md, версия v2.1); других изменений контракта нет.
+
+Изменения:
+1. **Дублирование термов устранено**: из `reward_campaigns` убраны `payout_model`, `cpm_rate`, `per_post_amount`, `retainer_amount`, `retainer_cycle_days`, `min_payout`, `max_payout_per_clip` — все экономические термы хранятся ТОЛЬКО в неизменяемой `campaign_terms_versions` (перенесены туда; валидация «заполнены только поля данного payout_model»); в кампании остаются идентичность/статус/платформы/валюта/снимки бюджета (НЕ термы)/deadline/указатели версий. Зафиксирован способ разрешения циклического FK `current_terms_version_id` (ALTER в конце 0007). CR-6 дополнен источником параметров формул (термы — из версии термов; бюджет — снимок кампании). ADR-019 уточнён.
+2. **Деньги**: все суммы приведены к `NUMERIC(14,2)` — было `(12,2)` у `per_post_amount`, `retainer_amount`, `min_payout`, `max_payout_per_clip`, `fee_free_budget_threshold` и всех expected/actual/cumulative полей сабмишенов и снапшотов; добавлен `fee_amount_expected` — теперь expected и actual существуют для каждой компоненты gross/fee/net (CR-0.4 переписан).
+3. **Матрица переходов**: убрано `posted → expired`; `expired` теперь ТОЛЬКО из `submission_required` (триггер — наступление `submission_deadline_at` без `submitted`), т.к. `posted` — кратковременное состояние с авто-переходом в `submission_required` (старт countdown); после `submitted` сабмишен не истекает; `expired` — терминальное, новая попытка = новый `reward_submissions`.
+4. **Попутно (вне контракта)**: исправлен флaky frontend-тест `pages.smoke.test.tsx > AnalyticsPage` — синхронный assert «Обучений ещё не было» после ожидания заголовка «ML-ранжирование» гонился с загрузкой списка прогонов (Loading → EmptyState); заменён на `findByText`. Продуктовый код не менялся; опечатка «автактивации» → «автоактивации» в CONTRACTS.
+
+API/schema changes: только контракты (ЧАСТЬ CR v2.1); продуктового кода по-прежнему нет (гейт CR-0).
+Dependencies: нет.
+Tests и фактический вывод (окружение песочницы пересобрано с нуля после 5-го сброса: `python3 -m venv .venv` + `pip install -e "./backend[dev,ml]"`, `npm ci`): `pytest -m "not real_services"` → **206 passed, 3 deselected** (29.61s, повторно 12.94s); `npm run test` → **Test Files 4 passed (4), Tests 19 passed (19)** — стабильно в 8/8 повторных прогонах после фикса флaky (до фикса падал ~1 из 3); `npm run typecheck` → exit 0; `npm run build` → **built in 1.89s** (typecheck в составе build: `tsc && vite build`).
+Контрактные проверки (grep по контрактным документам CONTRACTS.md + ARCHITECTURE.md): `NUMERIC(12,2)` — 0 вхождений; `| posted | expired |` — 0 вхождений; `fee_amount_expected` — 3 вхождения в CONTRACTS.md (reward_submissions, CR-0.4, v2.1-примечание); перечисление термов (`payout_model`, `cpm_rate`, `per_post_amount`, `retainer_amount`, `min_payout`, `max_payout_per_clip`) — только в описании `campaign_terms_versions` и примечании к `reward_campaigns` («живут ТОЛЬКО в campaign_terms_versions»), полей-дублей в схеме кампании нет.
+Git status --short: чисто после коммита.
+Known limitations: без изменений (полная ревизия llms.txt — до CR-4; визуальные проверки — на машине пользователя).
+Blockers: нет.
+**GATE: NO-GO→исправлено (v2.1). Код CR-1 (модели + миграция 0007 + Decimal-деньги + brief import) — только после согласования пользователем контракта v2.1.**
