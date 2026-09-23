@@ -266,74 +266,81 @@
 
 ---
 
-# ЧАСТЬ CR — Content Rewards (creator monetization), Stage CR-0..CR-9
+# ЧАСТЬ CR — Content Rewards (creator monetization), Stage CR-0..CR-9 — v2 (правки по ревью 2026-09-22)
 
-> Зафиксировано 2026-09-22 по директиве пользователя. **Код CR-1+ не начинается до согласования этого контракта** (гейт CR-0). Продукт: creator-only (не brand-side), Whop-first, provider-neutral. Валюта: USD первая, все поля готовы к ISO currency. Просмотры — промежуточный сигнал; главные KPI: фактическая чистая подтверждённая выплата, ожидаемая чистая выплата за клип, выплата за час активной работы, approval rate, доля отправленных вовремя ссылок, доля клипов без нарушений brief.
+> Зафиксировано 2026-09-22 по директиве пользователя; **v2 — после репозиторной ревь**ю: versioned terms вынесены в неизменяемую таблицу, добавлен audit-log переходов, закреплён денежный контракт, уточнены факты fee/scopes. **Код CR-1+ не начинается до согласования этой версии контракта** (гейт CR-0). Продукт: creator-only, Whop-first, provider-neutral, USD-first (ISO currency ready). Главные KPI: фактическая чистая подтверждённая выплата; ожидаемая чистая выплата за клип; выплата за час активной работы; approval rate; доля отправленных вовремя ссылок; доля клипов без нарушений brief. Просмотры — промежуточный сигнал.
 
-## CR-1. Сущности и миграции (0007–0010)
+## CR-0.1 Сущности и миграции — 11 таблиц, 4 миграции (0007–0010)
 
-Правила: деньги — `NUMERIC(14,2)` (суммы) / `NUMERIC(10,4)` (CPM-ставки) / `NUMERIC(5,2)` (проценты), в Python — `Decimal`; все изменчивые правила платформы (fee %, окна, лимиты) — поля кампании/версии брифа с `source_url` и `checked_at`, не константы кода. Миграции: 0007 campaigns+brief+sources, 0008 campaign_clips+compliance, 0009 submissions+snapshots, 0010 production_sessions. Модель == миграция (parity-тест, как 0001–0006).
+Правила: деньги — см. CR-0.4; модель == миграция (parity-тест, как 0001–0006); FK-политики как в §2.
 
-### CR-1.1 `reward_campaigns` (0007)
-- `id` PK uuid; `provider` str16 (`whop_content_rewards` — пока единственный); `external_campaign_id` str128; **uq (provider, external_campaign_id)**.
-- `name` str255; `brand_name` str255 null; `source_url` str1024 (URL-источник, обязателен при импорте); `status` str16 (`draft|active|paused|closed|unknown`).
-- `payout_model` str16 (`cpm|per_post|retainer`); `platforms` json (подмножество `tiktok|youtube|instagram|x`).
-- `currency` char3 default `USD`; `budget_total`, `budget_spent` NUMERIC(14,2) null (снимок на момент импорта/обновления — «свежесть бюджета», не realtime).
-- `cpm_rate` NUMERIC(10,4) null; `per_post_amount` NUMERIC(12,2) null; `retainer_amount` NUMERIC(12,2) null + `retainer_cycle_days` int null.
-- `min_payout` / `max_payout_per_clip` NUMERIC(12,2) null (потолок: клип перестаёт зарабатывать при достижении).
-- **Versioned campaign terms** (подтверждаются пользователем при импорте; источники — KNOWLEDGE §7): `creator_fee_percent` NUMERIC(5,2) default 10.00; `earnings_window_days` int default 7; `payout_hold_days` int default 3; `submission_deadline_minutes` int default 30; `terms_source_url` str1024; `terms_checked_at` timestamptz.
-- `deadline_at` timestamptz null (дедлайн кампании); `imported_payload` json (сырой снимок импорта); `active_brief_version_id` FK→campaign_brief_versions null (ставится ТОЛЬКО действием пользователя); `created_at/updated_at`.
+### 0007 — кампании (4 таблицы)
+**`reward_campaigns`**: `id` PK; `provider` str16 (`whop_content_rewards`); `external_campaign_id` str128; **uq (provider, external_campaign_id)**; `name` str255; `brand_name` str255 null; `source_url` str1024 (обязателен при импорте); `status` str16 (`draft|active|paused|closed|unknown`); `payout_model` str16 (`cpm|per_post|retainer`); `platforms` json ⊆ `tiktok|youtube|instagram|x`; `currency` char3 ISO-4217 default `USD`; `budget_total`/`budget_spent` NUMERIC(14,2) null (снимок, не realtime); `cpm_rate` NUMERIC(10,4) null; `per_post_amount` NUMERIC(12,2) null; `retainer_amount` NUMERIC(12,2) null; `retainer_cycle_days` int null; `min_payout`/`max_payout_per_clip` NUMERIC(12,2) null; `deadline_at` timestamptz null; `current_terms_version_id` FK→campaign_terms_versions null (ставится при подтверждении термов пользователем); `active_brief_version_id` FK→campaign_brief_versions null (только действием пользователя); `imported_payload` json; timestamps. **Термы НЕ хранятся полями кампании** (см. campaign_terms_versions).
 
-### CR-1.2 `campaign_brief_versions` (0007)
-- `id` PK; `campaign_id` FK CASCADE; `version` int ≥1, **uq (campaign_id, version)**; `status` (`pending_approval|approved|rejected|superseded`) — распознанный brief НИКОГДА не активируется автоматически.
-- Источник: `raw_text` text null | `raw_file_key` str512 null (S3) | `structured_json` (structured import); `source_url` str1024.
-- `checklist` json — типизированный чеклист (CR-2): массив `{requirement_id, category, rule, expected, severity_hint, confidence 0..1, source_span {start,end}, extracted_value}`.
-- `parser_engine` str32 (ollama:<model> | manual); `parser_confidence` NUMERIC(4,3); `supersedes_id` FK self null; `approved_at` timestamptz null; `created_at`.
-- При изменении требований (новая approved версия) — ранее проверенные клипы помечаются stale (re-run compliance).
+**`campaign_terms_versions`** — НЕИЗМЕНЯЕМЫЕ versioned campaign terms (ревью: «нельзя просто изменять в reward_campaigns»): `id` PK; `campaign_id` FK CASCADE; `version` int ≥1 **uq (campaign_id, version)**; `content_hash` char64 (sha256 канонического JSON термов — контроль неизменности); `creator_fee_percent` NUMERIC(5,2); `fee_free_budget_threshold` NUMERIC(12,2) (per-post/retainer с бюджетом ≥ порога → 0%; дефолт 5000 по KNOWLEDGE §7, но подтверждается при импорте); `earnings_window_days` int; `payout_hold_days` int; `submission_deadline_minutes` int; `terms_source_url` str1024; `terms_checked_at` timestamptz; `confirmed_at` timestamptz null (подтверждение пользователем); `created_at`. Строки только INSERT; изменение термов = новая версия; снапшоты/сабмишены ссылаются на конкретную версию.
 
-### CR-1.3 `campaign_source_assets` (0007)
-- `id` PK; `campaign_id` FK; `brief_version_id` FK; `kind` (`video|audio|image|link`); `storage_key` str512 null (загруженный в наш S3) | `external_url` str1024 null; `sha256` char64 null; `title` str255; `authorized` bool default **false** — только явная авторизация пользователя разрешает использование материала; `authorization_note` text null; `created_at`.
+**`campaign_brief_versions`**: `id` PK; `campaign_id` FK; `version` int **uq (campaign_id, version)**; `status` (`pending_approval|approved|rejected|superseded`) — автактивации нет; источник: `raw_text` text null | `raw_file_key` str512 null | `structured_json`; `source_url` str1024; `checklist` json (CR-2: `{requirement_id, category, rule, expected, severity_hint, confidence, source_span, extracted_value}`); `parser_engine` str32; `parser_confidence` NUMERIC(4,3); `supersedes_id` FK self null; `approved_at` null; `created_at`. Новая approved версия → ранее проверенные клипы stale (re-run compliance).
 
-### CR-1.4 `campaign_clips` (0008)
-- `id` PK; `campaign_id` FK; `clip_id` FK RESTRICT, **uq** (клип в одной кампании); `brief_version_id` FK (по какой версии делали); `render_asset_id` FK SET NULL; `render_sha256` char64 — hash файла, зафиксированный при публикации; подмена опубликованного файла запрещена (сверка при submission); `variant_label` str64 null; `created_at`.
+**`campaign_source_assets`**: `id` PK; `campaign_id` FK; `brief_version_id` FK; `kind` (`video|audio|image|link`); `storage_key` str512 null | `external_url` str1024 null; `sha256` char64 null; `title` str255; `authorized` bool default **false** (явная авторизация пользователя); `authorization_note` text null; `created_at`.
 
-### CR-1.5 `compliance_check_runs` / `compliance_findings` (0008)
-- runs: `id` PK; `campaign_clip_id` FK; `brief_version_id` FK; `status` (`passed|failed|warnings|error`); `counts` json `{blocker,warning,manual_review}`; `started_at/finished_at`; `created_at`.
-- findings: `id` PK; `check_run_id` FK CASCADE; `rule_code` str64 (см. CR-3.2); `severity` (`blocker|warning|manual_review`); `passed` bool; `message` text; `details` json; `created_at`.
-- Публикация блокируется при любом `blocker` (409 `compliance_failed` от publish-flow).
+### 0008 — клипы кампаний и комплаенс (3 таблицы)
+**`campaign_clips`**: `id` PK; `campaign_id` FK; `clip_id` FK RESTRICT **uq**; `brief_version_id` FK; `render_asset_id` FK SET NULL; `render_sha256` char64 (фиксируется при публикации; подмена файла — blocker); `variant_label` str64 null; `created_at`. **Осознанное продуктовое ограничение (зафиксировано по ревью)**: один Clip принадлежит максимум одной кампании — переиспользование одного рендера в нескольких кампаниях = риск rejection «reused content» (типовая причина отказов, KNOWLEDGE §7) и дубликата публикации на платформе. Для другой кампании создаётся новый Clip/вариант.
 
-### CR-1.6 `reward_submissions` (0009)
-- `id` PK; `campaign_clip_id` FK; `campaign_id` FK; `provider` str32; `status` — машина состояний CR-6.1; `idempotency_key` str255 **uq**.
-- `post_url` str1024 (опубликованная ссылка); `posted_at` timestamptz; `posted_render_sha256` char64; `submission_deadline_at` = posted_at + campaign.submission_deadline_minutes; `submitted_at` timestamptz; `submitted_via` (`manual|api`); `external_submission_id` str255 null.
-- `decision_at` timestamptz null; `rejection_reason` text null (сниippet из rejection note).
-- Деньги: `payout_expected` NUMERIC(12,2) (forecast на момент решения «постить»); `payout_actual` NUMERIC(12,2) null; `fee_actual` NUMERIC(12,2) null; `currency` char3; `paid_at` timestamptz null.
-- `last_error` text null; `created_at/updated_at`. Индексы: (campaign_id, status), (status, submission_deadline_at) для countdown-очереди.
+**`compliance_check_runs`**: `id` PK; `campaign_clip_id` FK; `brief_version_id` FK; `status` (`passed|failed|warnings|error`); `counts` json `{blocker,warning,manual_review}`; `started_at/finished_at`; `created_at`.
+**`compliance_findings`**: `id` PK; `check_run_id` FK CASCADE; `rule_code` str64 (CR-3.2); `severity` (`blocker|warning|manual_review`); `passed` bool; `message` text; `details` json; `created_at`.
 
-### CR-1.7 `reward_snapshots` (0009)
-- `id` PK; `submission_id` FK CASCADE; `captured_at` timestamptz; `views` bigint null; `views_kind` (`platform_official|provider_reported`); `payout_cumulative` NUMERIC(12,2) null; `raw` json. Индекс (submission_id, captured_at).
+### 0009 — сабмишены (3 таблицы)
+**`reward_submissions`**: `id` PK; `campaign_clip_id` FK; `campaign_id` FK; `terms_version_id` FK **NOT NULL** (термы, действовавшие на момент сабмишена); `provider` str32; `status` (CR-0.3); `idempotency_key` str255 **uq**; `post_url` str1024; `posted_at` timestamptz; `posted_render_sha256` char64; `submission_deadline_at` = posted_at + terms.submission_deadline_minutes; `submitted_at` null; `submitted_via` (`manual|api`); `external_submission_id` str255 null; `rejection_reason` text null; деньги (CR-0.4): `payout_gross_expected`/`payout_net_expected` NUMERIC(12,2) (forecast на решение «постить»), `payout_gross_actual`/`fee_amount_actual`/`payout_net_actual` NUMERIC(12,2) null; `currency` char3; `paid_at` null; `last_error` text null; timestamps. Индексы: (campaign_id, status), (status, submission_deadline_at).
 
-### CR-1.8 `production_sessions` (0010)
-- `id` PK; `campaign_id` FK null; `started_at`; `ended_at` null; `active_minutes` int; `clips_produced` int; `notes` text null; `created_at`. Основа KPI «выплата за час активной работы».
+**`reward_submission_events`** — audit-log переходов (ревью: «отдельные evidence/timestamps»): `id` PK; `submission_id` FK CASCADE; `from_status`/`to_status` str16; `decision` str32; `actor` (`user|system|provider`); `evidence` json (обязателен для user-решений: сниппет rejection note, URL, скрин-ссылка и т.п.); `idempotency_key` str255 **uq**; `created_at`.
 
-## CR-3.2 Правила compliance (rule_code, severity)
-`platform_allowed` blocker · `duration_in_range` blocker · `required_hashtags` blocker · `required_mentions` blocker · `disclosure_present` blocker · `source_authorized` blocker (материал не авторизован) · `source_hash_match` blocker (использован неавторизованный/чужой source) · `logo_requirement` manual_review (визуальное — не считаем выполненным без подтверждения) · `music_requirement` manual_review · `safe_zones` manual_review · `duplicate_similarity` blocker/warning (порог настраиваемый) · `render_hash_immutable` blocker (файл изменён после публикации) · `campaign_active` blocker · `budget_freshness` warning (снимок бюджета устарел) · `brief_stale` warning (проверено по старой версии брифа) · `deadline_window` blocker (кампания истекла). `error` руны — статус run=error, публикация запрещена до перезапуска.
+**`reward_snapshots`**: `id` PK; `submission_id` FK CASCADE; `captured_at` timestamptz; `views` bigint null; `views_kind` (`platform_official|provider_reported|user_reported`); `payout_gross_cumulative`/`payout_net_cumulative` NUMERIC(12,2) null; `raw` json. Индекс (submission_id, captured_at).
 
-## CR-6.1 Машина состояний RewardSubmission
-`draft → ready` (compliance passed + явный approve пользователя) `→ posted` (publication опубликована; фиксируется posted_render_sha256; старт 30-мин countdown) `→ submission_required` (сразу после posted; уведомление + escalation по настройке) `→ submitted` (manual: пользователь подтвердил отправку формы; api: ответ provider) `→ pending` (provider review) `→ approved → validating` (окноearnings) `→ paid` | `reversed`. Ветвления: `pending → rejected` (rejection_reason обязателен) | `flagged` (→ ручной разбор; из flagged — `pending|rejected`). `posted → expired` если deadline прошёл без submitted. `failed` — техническая ошибка отправки (idempotency: повтор без дублей). Переходы только вперёд по этому графу; незаконный переход — 409 `invalid_status_transition`.
+### 0010 — производственные сессии (1 таблица)
+**`production_sessions`**: `id` PK; `campaign_id` FK null; `started_at`; `ended_at` null; `active_minutes` int; `clips_produced` int; `notes` text null; `created_at`. Основа KPI «выплата за час активной работы».
 
-## CR-4. RewardProvider (generic provider architecture)
-`Protocol`: `provider_id` str; `capabilities() -> {campaigns: bool, submission: bool, status: bool, payouts: bool}`; `list_campaigns()` / `import_campaign(external_id)`; `submit(submission)`; `refresh_status(submission)`; `refresh_payout(submission)`. Первый провайдер — `ManualContentRewardsProvider`: capabilities `{campaigns: false, submission: false, status: false, payouts: false}`; готовит deep-link на форму Content Rewards, checklist и countdown; фактические статусы/выплаты пользователь вносит вручную (снапшоты/подтверждения). Автоматический Whop-провайдер — ТОЛЬКО после обнаружения и проверки официального Content Rewards API (обязательная ревизия docs.whop.com/llms.txt перед CR-4; Bounties API ≠ Content Rewards). Instagram — официальный adapter в существующем Publisher-реестре (`services/publish/instagram.py`): container flow `POST /{ig-user-id}/media` (media_type=REELS, публичный video_url=presigned) → poll status_code=FINISHED → `media_publish`; без App Review/прав — ручной fallback. Никакого scraping.
+## CR-0.4 Денежный контракт
+- **Валюта**: `currency` char3 ISO-4217; одна валюта на кампанию; кросс-валютная арифметика запрещена (конвертация — вне скоупа).
+- **Precision**: суммы `NUMERIC(14,2)`; ставки CPM `NUMERIC(10,4)`; проценты `NUMERIC(5,2)`. В Python — только `Decimal`; `float` для денег запрещён (audit-правило).
+- **Rounding**: промежуточные вычисления — полная точность Decimal; квантование до сотых **ROUND_HALF_EVEN** только на границах записи (expected/actual payout, fee). Модель==миграция по scale.
+- **Gross / creator fee / net** (раздельно, по ревью): `payout_gross` — начислено до комиссии; `fee_amount` — creator fee по terms_version (для Content Rewards: CPM всегда 10%; per-post/retainer с бюджетом ≥ threshold → 0%; creator fee ≠ brand/platform fee — не смешивать); `payout_net = payout_gross − fee_amount` — то, что попадает в wallet. Ожидание (expected) и факт (actual) — раздельные поля; снапшоты хранят кумулятив gross и net.
 
-## CR-6.2 Forecast (контракт формул; реализация CR-6)
-- **CPM**: `E[net] = min(max(views_D7_verified_predicted/1000 × cpm_rate, min_payout), max_payout_per_clip) × P(approval) × P(fraud_clear) × budget_factor × (1 − fee%)`; `budget_factor = clamp(budget_left/budget_total, 0..1)` по последнему снимку (warning при устаревании). 
-- **per_post**: `E[net] = per_post_amount × P(approval) × (1 − fee%)`; **retainer**: `E[net] = retainer_amount × (deliverables_done/deliverables_total|1) × P(approval) × (1 − fee%)`.
-- `Payout/hour = E[net] / active_hours(session)`. Forecast (payout_expected) и actual (payout_actual) хранятся РАЗДЕЛЬНО. Portfolio-эвристика 50/25/15/10 — конфигурируемые ключи `PORTFOLIO_WEIGHTS_*` (json в настройках), не константа.
+## CR-0.3 Машина состояний RewardSubmission + матрица переходов
+Статусы: `draft → ready → posted → submission_required → submitted → pending → approved|rejected|flagged → validating → paid|reversed`; служебные: `expired`, `failed`.
+Явная матрица (прочее — 409 `invalid_status_transition`):
+
+| from | to | триггер | evidence |
+|---|---|---|---|
+| draft | ready | user (подтверждение после compliance passed) | compliance_run_id |
+| ready | posted | system (публикация подтверждена пользователем) | publication_id, posted_render_sha256 |
+| posted | submission_required | system (автоматически, старт countdown) | — |
+| posted | expired | system (дедлайн прошёл без submitted) | deadline_at |
+| submission_required | submitted | user (manual-подтверждение) или provider (api) | submit confirmation |
+| submitted | pending | user/provider | — |
+| pending | approved / rejected / flagged | provider → user вводит факт | rejection_reason при rejected |
+| flagged | pending / rejected | user | note |
+| approved | validating | system (CPM: окно earnings) | terms_version |
+| approved | paid | system/user (per-post/retainer без окна) | paid_at |
+| validating | paid / reversed | system/user | payout snapshots |
+| paid | reversed | user (диспут) | evidence обязателен |
+| draft/ready/submission_required | failed | system (техошибка) | last_error |
+| failed | ready | user (retry) | — |
+
+`POST /api/v1/reward-submissions/{id}/decision` — ЕДИНЫЙ эндпоинт решений (approve/reject/flag/paid/reversed/ready-retry) c телом `{decision, evidence, idempotency_key}`: строго по матрице; каждый переход = строка в `reward_submission_events` (from/to/decision/actor/evidence/idempotency_key uq/created_at); повтор с тем же idempotency_key → 200 с существующим результатом без дублирования события; незаконный переход → 409.
+
+## CR-3.2 Правила compliance (rule_code → severity)
+`platform_allowed` blocker · `duration_in_range` blocker · `required_hashtags` blocker · `required_mentions` blocker · `disclosure_present` blocker · `source_authorized` blocker · `source_hash_match` blocker · `logo_requirement` manual_review (визуальное — без подтверждения не считается выполненным) · `music_requirement` manual_review · `safe_zones` manual_review · `duplicate_similarity` blocker/warning (порог настраиваемый) · `render_hash_immutable` blocker · `campaign_active` blocker · `budget_freshness` warning · `brief_stale` warning · `deadline_window` blocker. Ошибка правила → run.status=error, публикация запрещена до перезапуска.
+
+## CR-4. RewardProvider + факты (KNOWLEDGE §7–§8, проверено 2026-09-22)
+`Protocol`: `provider_id`; `capabilities() -> {campaigns, submission, status, payouts}`; `list_campaigns/import_campaign/submit/refresh_status/refresh_payout`. Первый — `ManualContentRewardsProvider` (все capabilities false; готовит deep-link формы, checklist, countdown; факты вносит пользователь). **Формулировка по API (по ревью)**: официальный creator API для Content Rewards **не найден на дату проверки 2026-09-22**; ревизия индекса docs.whop.com/llms.txt выполнена **частично** (выборочные чанки из 32) — **полная ревизия обязательна перед любой автоматизацией CR-4**; Bounties API ≠ Content Rewards. Instagram — официальный adapter в реестре Publisher: container flow (`media` media_type=REELS + публичный video_url → poll status_code → `media_publish`); **scopes**: Instagram Login — `instagram_business_basic`+`instagram_business_content_publish`; Facebook Login — `instagram_basic`+`instagram_content_publish`+`pages_read_engagement` (+ads_* при Business Manager); нужен Advanced Access (App Review) и учёт PPA; лимит 100 API-постов/24ч (enforced на media_publish). Без прав — ручной fallback. Никакого scraping/bots.
+
+## CR-6. Forecast (контракт формул)
+- **CPM**: `E[net] = min(max(views_D7_verified_pred/1000 × cpm_rate, min_payout), max_payout_per_clip) × P(approval) × P(fraud_clear) × budget_factor × (1 − fee%)`; `budget_factor = clamp(budget_left/budget_total, 0..1)` по последнему снимку (warning при устаревании).
+- **per_post**: `E[net] = per_post_amount × P(approval) × (1 − fee%)`; **retainer**: `E[net] = retainer_amount × (deliverables_done/total|1) × P(approval) × (1 − fee%)`.
+- `Payout/hour = E[net] / active_hours(production_sessions)`. Expected/actual раздельно (CR-0.4). Portfolio 50/25/15/10 — конфигурируемые веса, не константа.
 
 ## CR-7. Payout-aware ML (контракт)
-Dataset: на строку — clip features (существующие) + campaign features (payout_model, cpm, budget_factor, платформа) + account context + D0/D1/D3/D7 verified views + approval/rejection + reason + actual payout/fee + production minutes. Target модели: primary `net_verified_payout`, ranking `net_verified_payout_per_active_hour`. Engines: `approval_classifier`, `view_forecast_{3h,1d,7d}`, `payout_regression`, `learning_to_rank` (позднее contextual bandit). Split time/campaign/account-aware; leakage-тесты обязательны. Новая модель — shadow mode; активация только при превосходстве champion baseline (eval-gate как Stage 7, ADR-016 расширяется); cold-start/недостаток данных → честный `insufficient_data`, drift/feature mismatch/битый artifact → эвристика. Первые 50–100 публикаций — контролируемый сбор данных (обучения не запускаются: `ml_min_training_rows`-подобный порог по сабмишенам). Артефакты: hash, model type, feature schema, training window, dataset size, val metrics, created_at, статус champion|shadow|retired; rollback на предыдущую модель. Внешние популярные клипы (CR-8) — только как prior для hooks/style/features, НЕ как payout label.
+Dataset: clip features + campaign features (payout_model, cpm, budget_factor, platform) + account context + D0/D1/D3/D7 verified views + approval/rejection+reason + actual gross/fee/net + production minutes. Targets: primary `net_verified_payout`; ranking `net_verified_payout_per_active_hour`. Engines: `approval_classifier`, `view_forecast_{3h,1d,7d}`, `payout_regression`, `learning_to_rank` (позже contextual bandit). Split time/campaign/account-aware; leakage-тесты обязательны. Shadow mode → активация только при превосходстве champion; `insufficient_data` — честный ответ; drift/feature mismatch/битый artifact → эвристика; rollback на предыдущую модель. Первые 50–100 публикаций — контролируемый сбор данных. Внешняя популярность (CR-8) — prior для признаков, НЕ payout label. Артефакты: hash, model type, feature schema hash, training window, dataset size, val metrics, created_at, role champion|shadow|retired.
 
-## CR-4.3 Публичные API (семейства, contract-first)
-`/api/v1/reward-campaigns` (CRUD + import: text/file/JSON, uq provider+external_id), `/api/v1/reward-campaigns/{id}/brief` (GET история версий; POST парс-запрос → pending_approval; PATCH approve/reject — пользователь), `/api/v1/reward-campaigns/{id}/rank` (ранжирование кандидатов по E[net]/hour), `/api/v1/reward-campaigns/{id}/source-assets` (загрузка + авторизация), `/api/v1/clips/{id}/compliance` (POST прогон, GET последний), `/api/v1/reward-submissions` (список/создание draft), `/api/v1/reward-submissions/{id}/submit` (manual-подтверждение или api; idempotent), `/api/v1/reward-submissions/{id}/snapshots` (POST снапшот verified views/payout, GET история), `/api/v1/reward-submissions/{id}/decision` (approve/reject/paid — ручной ввод фактов), `/api/v1/reward-analytics/summary` (KPI: actual/expected, payout/hour, approval rate, on-time share, compliance share, urgent deadlines, budget risk), `/api/v1/reward-models/train` + `/runs` (+ shadow/activate/rollback), OAuth/connect для Instagram. Общие правила: ошибки `{detail:{code,message,fields}}` (§1); idempotency через `idempotency_key` (submission) и job-идемпотентность (§2.3); публикация и submission — ТОЛЬКО после явного подтверждения пользователя (409 `user_confirmation_required` без него).
-
-## CR-5. Автопилот (поток, все необратимые шаги — за подтверждением)
-Campaign → approved brief (пользователь) → authorized sources (пользователь) → candidates → campaign-aware texts/render variants → compliance run → payout forecast → **human approval** → publish (существующий publish-flow + Instagram adapter) → 30-мин countdown (уведомления по настройке `SUBMISSION_*`, escalation) → submission (manual provider: форма+checklist; api provider: автоматом после появления официального API) → review → validation hold (7d+3d по terms кампании) → paid. Render hash фиксируется до публикации; повторная проверка после изменений брифа (brief_stale).
+## CR-4.3 Публичные API (семейства)
+`/api/v1/reward-campaigns` (CRUD+import text/file/JSON) · `/{id}/brief` (GET версии; POST парс → pending_approval; PATCH approve/reject) · `/{id}/rank` · `/{id}/source-assets` (+авторизация) · `/{id}/terms` (GET история; POST новая версия; PATCH подтверждение) · `/api/v1/clips/{id}/compliance` (POST прогон; GET последний) · `/api/v1/reward-submissions` · `/{id}/submit` (manual-подтверждение/api; idempotent) · `/{id}/snapshots` · `/{id}/decision` (CR-0.3) · `/api/v1/reward-analytics/summary` (6 KPI + urgent deadlines + budget risk) · `/api/v1/reward-models/train` + `/runs` (shadow/activate/rollback) · OAuth/connect Instagram. Правила: ошибки §1; idempotency; публикация и submission — только после явного подтверждения (409 `user_confirmation_required`).

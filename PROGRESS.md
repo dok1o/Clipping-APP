@@ -5,7 +5,7 @@
 
 ## Текущий этап
 
-`CR-0 — Content Rewards: аудит и контракты` (готов к согласованию; код CR-1+ — только после согласования контрактов; Stage 0–10 завершены, Stage 11–14 исходного плана продолжаются после CR-ветки)
+`CR-0 v2 — Content Rewards: контракты доставлены в репозиторий (ветка запушена); ожидается согласование пользователем → CR-1` (Stage 0–10 завершены; Stage 11–14 исходного плана — после CR-ветки)
 
 ---
 
@@ -323,14 +323,27 @@ Blockers: нет.
 GATE: GO
 
 
-## CR-0 — REPORT (2026-09-22) — аудит и контракты Content Rewards
-Изменения: восстановление после нового сброса песочницы (Stage 9/10 коммиты не были запушены — воссозданы одним коммитом 2d981ed из уцелевшего рабочего дерева; окружение пересобрано из dependency-файлов). Проведён аудит фактов по первоисточникам и зафиксирован полный контракт CR-модуля.
-Структура: без кода (гейт CR-0). Документы: MASTER_SPEC (Часть 2: KPI, creator-only, Whop-first, provider-neutral), CONTRACTS (ЧАСТЬ CR: 8 сущностей, миграции 0007–0010, машина состояний submissions, compliance-правила, RewardProvider, формулы forecast, payout-aware ML, API-семейства), ARCHITECTURE (ADR-018..021), KNOWLEDGE (§7 Whop Content Rewards — проверено 2026-09-22; §8 Instagram Reels — проверено 2026-09-22).
-API/schema changes: только контракты (в CONTRACTS), код/миграции — после согласования.
+## CR-0 — REPORT v2 (2026-09-22, после репозиторной ревью) — аудит и контракты Content Rewards
+
+**Контекст сбоя (зафиксирован честно)**: v1 CR-0 существовал только в локальных коммитах песочницы (a1a1389, 2d981ed), которые не были запушены (правило «push только по отдельному запросу») и погибли при очередном сбросе .git песочницы. Ревью пользователя по checkout'у справедливо отклонило CR-0: артефактов в репозитории не было. v2: работа восстановлена из уцелевшего рабочего дерева песочницы (коммит a0686ec), контракт переработан по всем замечаниям ревью, ветка запушена.
+
+Изменения (v2 по замечаниям ревью):
+1. **Доставка**: Stage 9+10+CR-0 восстановлены коммитом a0686ec; ветка arena/01a0bff1-clipping-app запушена в origin — все артефакты теперь в репозитории и воспроизводимы.
+2. **Число сущностей**: 11 таблиц явно перечислены (compliance_check_runs и compliance_findings — отдельные таблицы; добавлены campaign_terms_versions и reward_submission_events), 4 миграции 0007–0010.
+3. **Versioned terms**: вынесены из reward_campaigns в НЕИЗМЕНЯЕМУЮ campaign_terms_versions (только INSERT, content_hash, uq (campaign_id, version), confirmed_at); submissions фиксируют terms_version_id (ADR-019 переписан).
+4. **/decision**: единый эндпоинт ТОЛЬКО со строгой матрицей переходов (явная таблица from→to→триггер→evidence), idempotency_key и audit-таблицей reward_submission_events (from/to/decision/actor/evidence/timestamp).
+5. **Деньги**: закреплён контракт CR-0.4 — валюта ISO-4217 на кампанию, Numeric(14,2)/(10,4)/(5,2), только Decimal (float запрещён), ROUND_HALF_EVEN до сотых на границах записи, gross/creator fee/net раздельно; creator fee ≠ brand fee.
+6. **campaign_clips.clip_id uq**: задокументировано как осознанное продуктовое ограничение (reused content — типовая причина rejection по Whop FAQ; для другой кампании — новый Clip).
+7. **Формулировки**: «официальный creator API Content Rewards не найден на дату проверки 2026-09-22» (не абсолютное «его нет»); «ревизия llms.txt выполнена частично» (устранено противоречие); полная ревизия — обязательное условие перед автоматизацией CR-4.
+8. **Факты fee**: проверены лично по pricing-странице (https://b4e0vdqv6zgqeqj4pfgm.apps.whop.com/pricing/creators): CPM всегда 10%; per-post/retainer ≥$5k — 0% (колонка «Verified» — нюанс, подтверждается как term при импорте).
+9. **Instagram scopes**: проверены по официальной доке (Updated Jun 30, 2026): Instagram Login — instagram_business_basic + instagram_business_content_publish; Facebook Login — instagram_basic + instagram_content_publish + pages_read_engagement (+ads_* при Business Manager); Advanced Access/App Review; PPA; лимит 100 API-постов/24ч.
+
+Структура: без продуктового кода (гейт CR-0 сохранён).
+API/schema changes: только контракты (CONTRACTS ЧАСТЬ CR v2).
 Dependencies: нет.
-Tests и фактический вывод: baseline подтверждён: pytest **206 passed**; frontend **19 passed**; typecheck OK.
-Visual/runtime verification: внешние факты проверены fetch-ом официальных страниц (KNOWLEDGE §7/§8, URL+даты): 30-мин окно, 7 дней earnings + 3 дня hold, fee 10% ($5k+ per-post/retainer — без fee), max payout per clip, причины отказов, CPM/per-post/retainer модели; Instagram: Professional accounts, container flow, status_code, instagram_content_publish + App Review, публичный video_url. Автоматического creator-API Content Rewards НЕ подтверждено — manual provider первым (Bounties API ≠ Content Rewards).
-Git status --short: чисто после коммита.
-Diff summary: +4 документа (MASTER_SPEC/CONTRACTS/ARCHITECTURE/KNOWLEDGE), PROGRESS.
-Known limitations: полная ревизия docs.whop.com/llms.txt (32 чанка) сделана выборочно — полная обязательна перед реализацией CR-4 автоматического провайдера (зафиксировано в контракте).
-Blockers: нет. **GATE: GO** — по аудиту и контрактам; **код CR-1 держится до согласования пользователем моделей/API/миграций** (явное требование директивы CR-0).
+Tests и фактический вывод: baseline после восстановления — см. ниже фактический вывод этого прогона (backend/frontend/typecheck).
+Visual/runtime verification: внешние факты — fetch официальных страниц (URL+даты в KNOWLEDGE §7–§8).
+Git status --short: чисто после коммитов.
+Known limitations: полная ревизия docs.whop.com/llms.txt (32 чанка) — до CR-4 автоматизации; живые скриншоты — на машине пользователя.
+Blockers: нет.
+**GATE: NO-GO→исправлено** — v1 отклонена ревью (артефакты отсутствовали в репозитории); v2 доставлена пушем ветки. **Код CR-1 — по-прежнему только после согласования пользователем контракта v2.**
