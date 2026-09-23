@@ -96,6 +96,7 @@ describe("AppShell + pages smoke", () => {
     const { default: AnalyticsPage } = await import("../AnalyticsPage");
     render(withRouter(<AnalyticsPage />));
     await waitFor(() => expect(screen.getByText("ML-ранжирование")).toBeTruthy());
-    expect(screen.getByText("Обучений ещё не было")).toBeTruthy();
+    // runs приходят отдельным запросом (Loading -> EmptyState): ждём, а не asserted сразу (фикс флaky)
+    expect(await screen.findByText("Обучений ещё не было")).toBeTruthy();
   });
 });
