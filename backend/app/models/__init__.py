@@ -6,6 +6,16 @@ from app.models.metric import Metric
 from app.models.platform_account import PlatformAccount
 from app.models.publication import Publication, PublicationStatus
 from app.models.rendered_asset import RenderedAsset, RenderedAssetStatus
+from app.models.rewards import (
+    CampaignBriefVersion,
+    CampaignTermsStatus,
+    CampaignSourceAsset,
+    CampaignTermsVersion,
+    PayoutModel,
+    RewardCampaign,
+    RewardCampaignStatus,
+    SourceAssetKind,
+)
 from app.models.training_run import TrainingRun
 from app.models.transcript import TranscriptSegment
 from app.models.video import Video, VideoStatus
@@ -28,4 +38,12 @@ __all__ = [
     "ClipCandidate",
     "Metric",
     "TrainingRun",
+    "RewardCampaign",
+    "RewardCampaignStatus",
+    "CampaignTermsVersion",
+    "CampaignBriefVersion",
+    "CampaignTermsStatus",
+    "CampaignSourceAsset",
+    "SourceAssetKind",
+    "PayoutModel",
 ]

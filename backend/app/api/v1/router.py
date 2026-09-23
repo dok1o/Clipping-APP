@@ -10,6 +10,7 @@ from app.api.v1 import (
     overview,
     publications,
     renders,
+    rewards,
     texts,
     transcripts,
     videos,
@@ -27,3 +28,4 @@ api_v1_router.include_router(candidates.router)
 api_v1_router.include_router(analytics.router)
 api_v1_router.include_router(ml.router)
 api_v1_router.include_router(overview.router)
+api_v1_router.include_router(rewards.router)
