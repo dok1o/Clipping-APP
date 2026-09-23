@@ -7,6 +7,7 @@ clip through the project's ffmpeg_runner, then probes the OUTPUT and asserts:
 
 Honest result codes: PASS / FAIL / SKIP (with the reason).
 """
+import json
 import shutil
 import subprocess
 import sys
@@ -52,6 +53,53 @@ def _probe_with_ffmpeg(ffmpeg: str, path: Path) -> dict | None:
     return meta
 
 
+def _probe_with_ffprobe(ffprobe: str, path: Path) -> dict | None:
+    """Read container and stream metadata required by this runtime verifier."""
+    result = subprocess.run(
+        [
+            ffprobe,
+            "-v", "error",
+            "-print_format", "json",
+            "-show_format",
+            "-show_streams",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return None
+
+    meta: dict = {
+        "duration_sec": None,
+        "width": None,
+        "height": None,
+        "video_codec": None,
+        "audio_codec": None,
+        "pix_fmt": None,
+    }
+    duration = payload.get("format", {}).get("duration")
+    try:
+        meta["duration_sec"] = float(duration) if duration not in (None, "N/A") else None
+    except (TypeError, ValueError):
+        pass
+
+    for stream in payload.get("streams", []):
+        if stream.get("codec_type") == "video" and meta["video_codec"] is None:
+            meta["video_codec"] = stream.get("codec_name")
+            meta["pix_fmt"] = stream.get("pix_fmt")
+            meta["width"] = stream.get("width")
+            meta["height"] = stream.get("height")
+        elif stream.get("codec_type") == "audio" and meta["audio_codec"] is None:
+            meta["audio_codec"] = stream.get("codec_name")
+    return meta
+
+
 def main() -> int:
     import os
 
@@ -68,7 +116,7 @@ def main() -> int:
 
     def probe(path: Path) -> dict | None:
         if ffprobe:
-            return probe_media(path, ffprobe_path=ffprobe)
+            return _probe_with_ffprobe(ffprobe, path)
         return _probe_with_ffmpeg(ffmpeg, path)
 
     version = subprocess.run([ffmpeg, "-version"], capture_output=True, text=True).stdout.splitlines()[0]
@@ -76,7 +124,7 @@ def main() -> int:
     print(f"      probe mode: {probe_mode}")
 
     from app.core.config import get_settings
-    from app.services.render.ffmpeg_runner import probe_media, render_vertical
+    from app.services.render.ffmpeg_runner import render_vertical
 
     ok_all = True
     with tempfile.TemporaryDirectory(prefix="verify-ffmpeg-") as tmp:

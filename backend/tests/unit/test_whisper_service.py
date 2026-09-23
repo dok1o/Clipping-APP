@@ -75,15 +75,19 @@ def test_transcribe_happy_path_mocked() -> None:
     assert info["compute_type"] == "int8"  # cpu fallback of int8_float16
 
 
-def test_transcribe_cuda_oom_falls_back_to_cpu() -> None:
-    """spec §17: CUDA OOM -> device=cpu, compute=int8, recorded in info."""
+@pytest.mark.parametrize(
+    "cuda_error",
+    ["CUDA out of memory", "Library cublas64_12.dll is not found or cannot be loaded"],
+)
+def test_transcribe_cuda_failure_falls_back_to_cpu(cuda_error: str) -> None:
+    """Spec §17: CUDA runtime failures use CPU/int8 and record the actual device."""
     attempts = []
 
     class OomThenOk:
         def __init__(self, model_name, device=None, compute_type=None):
             attempts.append((device, compute_type))
             if device == "cuda":
-                raise RuntimeError("CUDA out of memory")
+                raise RuntimeError(cuda_error)
 
         def transcribe(self, path, beam_size=3):
             seg = MagicMock(start=0.0, end=1.0, text="ok", avg_logprob=None)

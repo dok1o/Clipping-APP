@@ -13,6 +13,7 @@ import argparse
 import json
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 BACKEND_DIR = Path(__file__).resolve().parents[1] / "backend"
@@ -52,9 +53,9 @@ def dry_run() -> int:
             return httpx.Response(200, json={"data": {"status": "PUBLISH_COMPLETE"}, "error": {"code": "ok"}})
         return httpx.Response(204)
 
-    tmp = Path("/tmp/verify-platform-dry.mp4")
-    tmp.write_bytes(b"0" * 2048)
-    try:
+    with tempfile.TemporaryDirectory(prefix="verify-platform-") as tmp_dir:
+        tmp = Path(tmp_dir) / "dry-run.mp4"
+        tmp.write_bytes(b"0" * 2048)
         publisher = TikTokPublisher(base_url="https://mock.test", transport=httpx.MockTransport(handler), poll_delay_sec=0)
         result = publisher.publish(
             PublishRequest(video_path=str(tmp), title="dry run #fyp", privacy="public"),
@@ -65,18 +66,17 @@ def dry_run() -> int:
         assert init["source_info"]["source"] == "FILE_UPLOAD"
         assert result.status == "published"
         print("[PASS] direct-post flow (init -> upload -> status) against mock transport")
-    finally:
-        tmp.unlink(missing_ok=True)
 
-    # 3) youtube is a registered *future* platform: absence must be reported, not crash
-    try:
-        from app.services.publish.tiktok import get_publisher as gp
+    # 3) second platform is registered through the shared extension point
+    from app.services.publish.base import get_publisher
+    from app.services.publish.youtube import YouTubePublisher
 
-        gp("youtube")
-        print("[FAIL] youtube publisher unexpectedly available (should not exist yet)")
+    youtube = get_publisher("youtube")
+    if isinstance(youtube, YouTubePublisher):
+        print("[PASS] publisher registry resolves youtube -> YouTubePublisher")
+    else:
+        print("[FAIL] publisher registry returned the wrong YouTube adapter")
         ok = False
-    except Exception:
-        print("[PASS] youtube not registered yet (clean extension point, no stub endpoints)")
 
     # 4) env presence (informational in dry-run)
     missing = [name for name in REQUIRED_ENV if not os.environ.get(name)]

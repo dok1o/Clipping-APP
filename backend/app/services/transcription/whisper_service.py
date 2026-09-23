@@ -4,7 +4,7 @@ faster-whisper is an OPTIONAL dependency (extras [whisper]); it is imported
 lazily so the main test suite and API work without it (mocked in tests, real
 check via scripts/verify_whisper.py on a GPU/CPU machine).
 
-GPU (8GB): device=cuda + int8_float16 by default; on CUDA OOM -> CPU + int8.
+GPU (8GB): device=cuda + int8_float16 by default; on CUDA runtime failure -> CPU + int8.
 `device_used` is recorded in the Job result (spec §17).
 """
 from __future__ import annotations
@@ -22,6 +22,15 @@ from app.models.video import Video, VideoStatus
 from app.services.render.ffmpeg_runner import RenderError, extract_audio_wav
 
 logger = get_logger(__name__)
+
+CUDA_FAILURE_MARKERS = (
+    "cuda",
+    "cublas",
+    "cudnn",
+    "nvidia",
+    "out of memory",
+    "insufficient driver",
+)
 
 
 class TranscribeError(Exception):
@@ -52,6 +61,11 @@ def resolve_compute_type(device: str, setting: str) -> str:
     if device == "cpu" and setting == "int8_float16":
         return "int8"
     return setting
+
+
+def _is_cuda_failure(message: str) -> bool:
+    normalized = message.lower()
+    return any(marker in normalized for marker in CUDA_FAILURE_MARKERS)
 
 
 def transcribe_audio(
@@ -105,8 +119,8 @@ def transcribe_audio(
         raise
     except Exception as exc:  # noqa: BLE001 — controlled failure
         message = str(exc)
-        if wanted_device == "cuda" and ("out of memory" in message.lower() or "cuda" in message.lower()):
-            logger.warning("CUDA OOM during transcription — falling back to CPU/int8")
+        if wanted_device == "cuda" and _is_cuda_failure(message):
+            logger.warning("CUDA transcription failed — falling back to CPU/int8: %s", message)
             try:
                 model = WhisperModel(model_name, device="cpu", compute_type="int8")
                 segments_iter, audio_info = model.transcribe(

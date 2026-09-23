@@ -1,6 +1,5 @@
-"""ffmpeg_runner unit tests (no real ffmpeg needed — fake binaries/scripts)."""
-import stat
-from pathlib import Path
+"""ffmpeg_runner unit tests (no real ffmpeg needed)."""
+import subprocess
 
 import pytest
 
@@ -41,11 +40,6 @@ def test_build_render_args_order_and_codecs() -> None:
     assert all(isinstance(a, str) for a in args)
 
 
-def _make_script(path: Path, body: str) -> None:
-    path.write_text(f"#!/bin/sh\n{body}\n")
-    path.chmod(path.stat().st_mode | stat.S_IEXEC)
-
-
 def test_render_missing_binary(tmp_path) -> None:
     with pytest.raises(RenderError) as e:
         render_vertical(
@@ -55,36 +49,48 @@ def test_render_missing_binary(tmp_path) -> None:
     assert e.value.code == "ffmpeg_missing"
 
 
-def test_render_timeout(tmp_path) -> None:
-    fake = tmp_path / "ffmpeg-slow"
-    _make_script(fake, "sleep 30")
+def test_render_timeout(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=args[0], timeout=1)
+
+    monkeypatch.setattr("app.services.render.ffmpeg_runner.subprocess.run", timeout)
     with pytest.raises(RenderError) as e:
         render_vertical(
             tmp_path / "in.mp4", tmp_path / "out.mp4",
-            start_sec=0, duration_sec=5, ffmpeg_path=str(fake), timeout_sec=1,
+            start_sec=0, duration_sec=5, ffmpeg_path="ffmpeg", timeout_sec=1,
         )
     assert e.value.code == "render_timeout"
 
 
-def test_render_nonzero_exit_captures_stderr_tail(tmp_path) -> None:
-    fake = tmp_path / "ffmpeg-fail"
-    _make_script(fake, "echo 'boom error detail' >&2; exit 3")
+def test_render_nonzero_exit_captures_stderr_tail(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "app.services.render.ffmpeg_runner.subprocess.run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=args[0], returncode=3, stdout="", stderr="boom error detail"
+        ),
+    )
     with pytest.raises(RenderError) as e:
         render_vertical(
             tmp_path / "in.mp4", tmp_path / "out.mp4",
-            start_sec=0, duration_sec=5, ffmpeg_path=str(fake), timeout_sec=10,
+            start_sec=0, duration_sec=5, ffmpeg_path="ffmpeg", timeout_sec=10,
         )
     assert e.value.code == "render_failed"
     assert "boom error detail" in e.value.stderr_tail
 
 
-def test_render_empty_output_is_failure(tmp_path) -> None:
-    fake = tmp_path / "ffmpeg-empty"
-    _make_script(fake, "exit 0")  # succeeds but writes nothing
+def test_render_empty_output_is_failure(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "app.services.render.ffmpeg_runner.subprocess.run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args=args[0], returncode=0, stdout="", stderr=""
+        ),
+    )
     with pytest.raises(RenderError) as e:
         render_vertical(
             tmp_path / "in.mp4", tmp_path / "out.mp4",
-            start_sec=0, duration_sec=5, ffmpeg_path=str(fake), timeout_sec=10,
+            start_sec=0, duration_sec=5, ffmpeg_path="ffmpeg", timeout_sec=10,
         )
     assert e.value.code == "render_failed"
 

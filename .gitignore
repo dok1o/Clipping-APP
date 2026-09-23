@@ -31,3 +31,7 @@ celerybeat-schedule
 .DS_Store
 .ollama/
 *.egg-info/
+.idea/
+.vscode/
+.tools/
+frontend/.npm-cache/

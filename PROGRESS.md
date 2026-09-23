@@ -268,6 +268,13 @@
 **Блокеры**: реальные ключи Google OAuth — на машине пользователя (dry-путь покрыт MockTransport по официальному протоколу).
 **GATE: GO** — платформа добавлена адаптером + регистрацией, ядро не тронуто; протокол — строго официальный (KNOWLEDGE §6, даты проверок зафиксированы).
 
+### Security maintenance — Frontend dependencies — DONE (2026-09-21)
+- Обновлены Vite 5→6.4.3, esbuild 0.21.5→0.25.12 и React Router 6→7.18.4; `npm audit` — 0 уязвимостей, typecheck и production build проходят.
+- 2026-09-21 — Восстановлен локальный запуск после merge: возвращён отсутствовавший SQLAlchemy model package, исправлены ignore-правила и Windows-совместимость ffmpeg unit-тестов; Alembic head применён, API/S3 smoke-check пройден, backend tests: 199 passed, 3 skipped.
+- 2026-09-21 — Добавлен Windows desktop launcher: ярлыки запуска/остановки управляют Moto S3, FastAPI и Vite скрытыми отслеживаемыми деревьями процессов; полный start/health/stop цикл и запуск через `.lnk` проверены.
+- 2026-09-22 — `origin/main` проверена (`Already up to date`), `origin/arena/01a0bff1-clipping-app` fast-forward merged до `815e98a`; локальные изменения восстановлены без замены новых канонических ORM-моделей. Проверки: backend `199 passed, 3 deselected`; frontend typecheck и production build — PASS.
+- 2026-09-22 — Post-merge runtime audit: исправлены Windows temp-path в TikTok verifier, полный ffprobe stream-check и CPU fallback Whisper при отсутствующем `cublas64_12.dll`; локально выбран `WHISPER_DEVICE=cpu`. Проверки: backend `200 passed, 3 deselected`; real-services `3 passed`; ffmpeg render, faster-whisper CPU, TikTok/YouTube dry-run — PASS; Alembic `0006 (head)`; pip check clean; npm audit 0; frontend typecheck/build PASS; живые frontend/API GET маршруты — 200. Реальные публикации не выполнялись: внешние OAuth credentials не настроены.
+
 ---
 
 
