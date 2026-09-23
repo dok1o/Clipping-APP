@@ -69,3 +69,26 @@
 - **Неверифицированные проекты**: загрузки через API из проектов без аудита (созданных после 2020-07-28) принудительно приватные — аналог TikTok unaudited. Источник: https://developers.google.com/youtube/v3/docs/videos/insert .
 - **Метрики**: `GET https://www.googleapis.com/youtube/v3/videos?part=statistics&id={id}` (1 юнит) → `items[].statistics{viewCount, likeCount, commentCount}` (строки); счётчика shares НЕТ (остаётся None). Реализовано `YouTubeMetricsAdapter`. Источники: https://developers.google.com/youtube/v3/docs/videos/list , https://developers.google.com/youtube/v3/docs/video .
 - **Shorts**: вертикальные видео ≤3 мин распознаются как Shorts автоматически, отдельного API-флага нет (официального эндпоинта «shorts» не существует).
+
+## 7. Whop Content Rewards (проверено по официальным страницам 2026-09-22)
+
+- **Продукт**: Content Rewards — кампании брендов для креаторов (clipping / music / logo / UGC). Креатор постит со своих аккаунтов и отправляет ссылку. Источник: https://b4e0vdqv6zgqeqj4pfgm.apps.whop.com/creators (официальная creator-страница, проверена 2026-09-22).
+- **Модели выплат** (FAQ, та же страница): CPM (за 1000 просмотров), per post (флэт за одобренный пост), retainer (фикс за цикл за согласованные deliverables — pro rata или только при полном выполнении). Тип кампании виден на странице кампании.
+- **Окно отправки**: опубликованную ссылку нужно отправить **в течение 30 минут** после поста («Post to the platform the campaign asks for, then submit the link within 30 minutes»).
+- **Причины отказов** (FAQ): wrong platform, missing tags or disclosure, reused content, post edited/deleted после отправки; причина указывается в rejection note.
+- **Тайминг выплат CPM** (FAQ): клип зарабатывает **7 дней с момента approval**, затем payout держится на **3-дневном hold**. Per-post/retainer зависят от настроек кампании.
+- **Комиссия** (FAQ): плоские **10%** со всего заработка на любой модели; **per-post и retainer кампании с бюджетом ≥ $5,000 — без комиссии**.
+- **Потолок**: каждая кампания задаёт max payout за один клип — клип перестаёт зарабатывать по достижении потолка. Также бывает min payout (порог попадания в review).
+- **Вывод**: кошелёк, без минимума и без комиссии за вывод.
+- **Платформы кампаний**: TikTok, YouTube, Instagram, X (иконки на creator-странице).
+- **ВАЖНО (provider)**: официального creator-facing API для Content Rewards НЕ подтверждено. Официальный индекс https://docs.whop.com/llms.txt (проверен 2026-09-22, выборочно; полная ревизия обязательна перед CR-4) документирует payments/memberships/chat/reviews/shipments/app-builds и отдельный **Bounties API** — Bounties ≠ Content Rewards, не путать. Официальная страница https://docs.whop.com/memberships-and-access/third-party-apps/content-rewards описывает Content Rewards как brand-side инструмент (без creator-API). Сторонние скраперы (Apify и т.п.) ЗАПРЕЩЕНЫ правилами проекта. Вывод: **CR-4 начинается с manual provider** (открыть форму, подготовить URL/checklist/countdown); автоматический adapter — только после документированного официального API (повторная проверка индекса обязательна перед реализацией).
+- **Все числа (30 мин / 7 дней / 3 дня / 10% / $5k) — изменчивые правила**: хранить как versioned campaign terms при импорте кампании с подтверждением пользователя, НЕ как hardcoded truth.
+
+## 8. Instagram Platform — официальная публикация Reels (проверено 2026-09-22)
+
+- **Кто может**: только Professional accounts (Business/Creator), привязанные к Facebook Page. Personal accounts — нет. Источник: https://developers.facebook.com/docs/instagram-platform/content-publishing .
+- **Протокол (2 шага + poll)**: `POST /{ig-user-id}/media` с `media_type=REELS`, `video_url` (ОБЯЗАТЕЛЬНО публичный URL — Meta сам скачивает файл), `caption`, опции `share_to_feed`, `cover_url`, `thumb_offset`, `audio_name` → контейнер; `GET /{container-id}?fields=status_code` poll до `FINISHED` (значения IN_PROGRESS/FINISHED/ERROR/EXPIRED); затем `POST /{ig-user-id}/media_publish` с `creation_id` → IG Media ID. Источник: https://developers.facebook.com/docs/instagram-platform/content-publishing/ и https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-user/media/ .
+- **Лимиты**: `GET /{ig-user-id}/content_publishing_limit` — текущее использование publishing rate limit; Reels через API у большинства аккаунтов ≤90 сек; видео должно соответствовать Reels-спецификациям.
+- **Также существует** resumable upload через `https://rupload.facebook.com/ig-api-upload/` (для больших видео).
+- **Разрешения**: `instagram_content_publish` (требуется App Review); чтение — `instagram_basic`; insights — `instagram_manage_insights`. Без App Review / без публичного media URL — ручной fallback (правило CR-4).
+- **Для adapter**: учёт container flow, статуса обработки (status_code), ограничений media delivery (публичный video_url — наш presigned S3 URL подходит, но URL должен быть доступен Meta). Метрики — официальные insights endpoints.

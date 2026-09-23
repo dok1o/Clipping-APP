@@ -39,6 +39,26 @@ def list_runs(limit: int = 20, db: Session = Depends(get_db)) -> TrainingRunPage
     return TrainingRunPage(items=[TrainingRunRead.model_validate(r) for r in rows], total=len(rows))
 
 
+@router.get("/ml/active-model")
+def active_model(db: Session = Depends(get_db)) -> dict:
+    """Active rerank model indicator (None -> heuristic ranking)."""
+    from app.services.ai_clipping.ml_ranker import get_active_model
+
+    try:
+        loaded = get_active_model(db)
+    except Exception:  # noqa: BLE001 — indicator must never break the page
+        loaded = None
+    if loaded is None:
+        return {"active": False, "model_version": None}
+    _model, bundle = loaded
+    return {
+        "active": True,
+        "model_version": bundle.get("version"),
+        "backend": bundle.get("backend"),
+        "feature_keys": bundle.get("feature_keys"),
+    }
+
+
 @router.get("/ml/dataset-status")
 def dataset_status(db: Session = Depends(get_db)) -> dict:
     dataset = dataset_service.build_training_dataset(db)

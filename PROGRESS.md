@@ -5,7 +5,7 @@
 
 ## Текущий этап
 
-`Stage 0 — Documentation, skeleton, health, DB, Celery, S3, frontend, audit` (in progress)
+`CR-0 — Content Rewards: аудит и контракты` (готов к согласованию; код CR-1+ — только после согласования контрактов; Stage 0–10 завершены, Stage 11–14 исходного плана продолжаются после CR-ветки)
 
 ---
 
@@ -269,3 +269,68 @@
 **GATE: GO** — платформа добавлена адаптером + регистрацией, ядро не тронуто; протокол — строго официальный (KNOWLEDGE §6, даты проверок зафиксированы).
 
 ---
+
+
+## Stage 9 — baseline audit и стабилизация (CONTINUATION MASTER PROMPT) — 2026-09-21
+
+### T9.1 — Восстановление окружения после сброса песочницы — DONE
+- Песочница перециклилась: `.git` откатился к базовому e3b2d9f при живом рабочем дереве. Восстановлено БЕЗ потери файлов: `git fetch origin` → `git reset --mixed FETCH_HEAD` (HEAD/индекс на 815e98a, рабочее дерево не тронуто; reset --hard не применялся). `.venv`/`node_modules` пересобраны только из dependency files (`pyproject.toml`, `package.json`) — версии не менялись.
+- Статус: DONE.
+
+### T9.2 — Полный аудит — DONE (2026-09-21, фактический вывод)
+- `pytest -m "not real_services"` → **199 passed, 3 deselected** (включая audit rules: boto3 только в infra/s3.py, subprocess без shell=True, secrets, create_all только в тестах).
+- Миграции: `alembic upgrade head` → `downgrade base` → `upgrade head` на чистой sqlite → **OK** (0001–0006).
+- Frontend: `npm run build` → **built in 1.65s**; `npm run typecheck` → **OK**.
+- `npm audit` → **4 vulnerabilities (3 moderate, 1 high)**: vite≤6.4.2 (high — fs.deny bypass на Windows dev-server), esbuild≤0.24.2, react-router 6.x (open redirect backslash + SSR hydration; SSR не используется, пользовательских URL в Link нет). Классификация: **security-debt dev-toolchain, НЕ runtime-regression** (локальный single-user, prod-сборка не затронута). Ремедиация (vite≥6.4.3, react-router≥7.18 + регрессионный build) — Stage 13 security review.
+- FastAPI import → OK (routes: 6 + routers). `/health` → 200 `{"status":"ok","version":"0.1.0","checks":{"db":"ok","redis":"skip","s3":"skip"}}`, тест есть (test_health.py).
+- Tracked media/model artifacts/credentials → **0** (git ls-files по маскам .mp4/.joblib/.pt/.env/…).
+- `git status --short` до правок Stage 9 → чисто относительно 815e98a (незакоммиченных пользовательских изменений нет).
+- Статус: DONE.
+
+### T9.3 — Windows launcher — DONE (2026-09-21)
+- `scripts/windows/{start,health,stop,common}.ps1` + README: venv→deps→alembic→uvicorn (+опции -Worker/-Beat/-Frontend/-All), .env loader, PID-файлы в .run/, health = GET /health + статусы процессов. Live-проверка в песочнице невозможна (PowerShell отсутствует) — **честный SKIP**, синтаксис выверен по структуре репо; запуск на Windows-машине пользователя.
+- Статус: DONE.
+
+### T9.4 — Гигиена репо — DONE
+- `backend/ai_clipper_backend.egg-info/` убран из git (build-артефакт), `*.egg-info/` в .gitignore.
+- Статус: DONE.
+
+## Stage 9 — REPORT
+Изменения: восстановление после сброса песочницы (история+дерево целы), Windows launcher, untrack egg-info, актуализация «Текущего этапа».
+Структура: + scripts/windows/ (5 файлов); без изменений backend-архитектуры.
+API/schema changes: нет.
+Dependencies: нет новых (окружение восстановлено из существующих файлов).
+Tests и фактический вывод: pytest **199 passed**; миграции цикл OK; build 1.65s; typecheck OK; npm audit 4 (классифицировано, Stage 13); /health 200.
+Visual/runtime verification: live-стек поднят заново (см. ниже), /health проверен curl-ом.
+Git status --short: чисто после коммитов stage9-t9.x.
+Diff summary: +launcher, -egg-info(tracked), .gitignore.
+Known limitations: npm audit dev-toolchain (Stage 13); PowerShell-скрипты не запускались живьём (нет pwsh в песочнице).
+Blockers: нет.
+GATE: GO
+
+
+## Stage 10 — REPORT (2026-09-21) — Dashboard 2.0
+Изменения: полная перестройка UI в рабочий дашборд: AppShell (sidebar + мобильный topbar, индикатор бэкенда по /health c паузой при скрытом табе, очередь задач, баннер сбоев), OverviewPage (счётчики конвейера, ближайшая автопубликация, метрики, ML-статус, список упавших задач), VideosPage 2.0 (drag-and-drop upload с XHR-прогрессом и клиентской валидацией mp4/mov/webm/mkv ≤2ГБ, список+детейл, транскрипт, кандидаты с promote, ручной клип), ClipsPage 2.0 (правка draft через PATCH, рендер с прогрессом Job, video-превью + скачивание через GET /clips/{id}/asset, тексты платформ, контекст транскрипта), PublishPage 2.0 (диалог привязки аккаунтов с Fernet-подсказками, лимиты платформ, публикация/расписание с подтверждающим диалогом, история с ошибками и retry), AnalyticsPage 2.0 (сравнение платформ, лучшие клипы с ER, динамика, причины пропуска строк датасета, ML-раны и активная модель).
+Структура: + src/components/{icons,ui/*,layout/AppShell}, src/hooks/{usePolling,useJobWait}, src/pages/OverviewPage; переписаны все 4 страницы; ui-примитивы: Button/StatusBadge/Field(Text/Select/Textarea)/Dialog/Toast/Empty/Error/Progress/Loading.
+API/schema changes (contract-first, CONTRACTS §4.13–4.15): GET /api/v1/jobs (фильтры status/type, пагинация), GET /api/v1/overview (агрегат), PATCH /api/v1/clips/{id} (только draft), GET /api/v1/clips/{id}/asset (последний READY-ассет), GET /api/v1/ml/active-model.
+Dependencies: +dev vitest@2, @testing-library/{react,dom,user-event}, jsdom (минимальные component/smoke тесты — обосновано требованием Stage 10).
+Tests и фактический вывод: backend **206 passed** (+7: overview/jobs/PATCH/asset); frontend `npm run test` → **19 passed** (4 файла: primitives 8, toast 3, dialog 2, pages smoke 6); `npm run typecheck` OK; `npm run build` → built in 1.82s.
+Visual/runtime verification: статический аудит — радиусы только rounded-md (6px ≤ 8px), нет градиентов/орбов/purple-slate-монотемы, таблицы в overflow-x-auto (3), motion-safe/motion-reduce (6), focus-visible ring на всех интерактивных элементах, aria-label/role на dnd-зоне, диалогах, тостах, прогресс-барах; контраст мелкого текста поднят neutral-400→500 (≥4.5:1). Живые скриншоты 1440x900/1280x800/390x844 в песочнице невозможны (нет браузера) — живой превью-стенд поднят, проверка размеров на машине пользователя.
+Git status --short: чисто после коммитов.
+Diff summary: +~2600 строк фронтенда, +5 эндпоинтов, +7 backend-тестов.
+Known limitations: генерация кандидатов синхронна в HTTP-хендлере (кандидат в Stage 13); визуальная проверка в 3 разрешениях — на машине пользователя.
+Blockers: нет.
+GATE: GO
+
+
+## CR-0 — REPORT (2026-09-22) — аудит и контракты Content Rewards
+Изменения: восстановление после нового сброса песочницы (Stage 9/10 коммиты не были запушены — воссозданы одним коммитом 2d981ed из уцелевшего рабочего дерева; окружение пересобрано из dependency-файлов). Проведён аудит фактов по первоисточникам и зафиксирован полный контракт CR-модуля.
+Структура: без кода (гейт CR-0). Документы: MASTER_SPEC (Часть 2: KPI, creator-only, Whop-first, provider-neutral), CONTRACTS (ЧАСТЬ CR: 8 сущностей, миграции 0007–0010, машина состояний submissions, compliance-правила, RewardProvider, формулы forecast, payout-aware ML, API-семейства), ARCHITECTURE (ADR-018..021), KNOWLEDGE (§7 Whop Content Rewards — проверено 2026-09-22; §8 Instagram Reels — проверено 2026-09-22).
+API/schema changes: только контракты (в CONTRACTS), код/миграции — после согласования.
+Dependencies: нет.
+Tests и фактический вывод: baseline подтверждён: pytest **206 passed**; frontend **19 passed**; typecheck OK.
+Visual/runtime verification: внешние факты проверены fetch-ом официальных страниц (KNOWLEDGE §7/§8, URL+даты): 30-мин окно, 7 дней earnings + 3 дня hold, fee 10% ($5k+ per-post/retainer — без fee), max payout per clip, причины отказов, CPM/per-post/retainer модели; Instagram: Professional accounts, container flow, status_code, instagram_content_publish + App Review, публичный video_url. Автоматического creator-API Content Rewards НЕ подтверждено — manual provider первым (Bounties API ≠ Content Rewards).
+Git status --short: чисто после коммита.
+Diff summary: +4 документа (MASTER_SPEC/CONTRACTS/ARCHITECTURE/KNOWLEDGE), PROGRESS.
+Known limitations: полная ревизия docs.whop.com/llms.txt (32 чанка) сделана выборочно — полная обязательна перед реализацией CR-4 автоматического провайдера (зафиксировано в контракте).
+Blockers: нет. **GATE: GO** — по аудиту и контрактам; **код CR-1 держится до согласования пользователем моделей/API/миграций** (явное требование директивы CR-0).

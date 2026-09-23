@@ -30,3 +30,4 @@ celerybeat-schedule
 *.log
 .DS_Store
 .ollama/
+*.egg-info/

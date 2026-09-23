@@ -71,6 +71,45 @@ def create_manual_clip(
     return clip
 
 
+def update_clip(
+    db: Session,
+    clip_id: UUID,
+    *,
+    title: str | None = None,
+    start_sec: float | None = None,
+    end_sec: float | None = None,
+) -> Clip:
+    """Edit a DRAFT clip (title/timecodes). Rendered clips are immutable."""
+    from app.models.clip import ClipStatus
+
+    clip = get_clip_or_404(db, clip_id)
+    if clip.status != ClipStatus.DRAFT:
+        raise AppError(
+            409, "clip_not_editable", f"Only draft clips can be edited (status={clip.status})"
+        )
+    settings = get_settings()
+    new_start = start_sec if start_sec is not None else clip.start_sec
+    new_end = end_sec if end_sec is not None else clip.end_sec
+    if new_end <= new_start:
+        raise AppError(400, "invalid_range", "end_sec must be greater than start_sec")
+    duration = new_end - new_start
+    if duration < settings.clip_min_sec or duration > settings.clip_max_sec:
+        raise AppError(
+            400, "invalid_clip_state",
+            f"Clip must be {settings.clip_min_sec}-{settings.clip_max_sec} seconds "
+            f"(got {duration:.2f})",
+        )
+    if new_start < 0:
+        raise AppError(400, "invalid_range", "start_sec must be >= 0")
+    if title is not None:
+        clip.title = title
+    clip.start_sec = new_start
+    clip.end_sec = new_end
+    db.commit()
+    db.refresh(clip)
+    return clip
+
+
 def get_clip_or_404(db: Session, clip_id: UUID) -> Clip:
     clip = db.get(Clip, clip_id)
     if clip is None:

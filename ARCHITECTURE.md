@@ -102,3 +102,17 @@ Stage 1: eager-режим допустим (контракт 202 стабиле�
 - **ADR-012 end>start в сервисе**: `end_sec > start_sec` проверяется в clip_service (400 `invalid_range`), а не в pydantic model_validator — чтобы вернуть 400 из §10 вместо 422.
 - **ADR-013 celery eager по умолчанию в test**: `celery_eager_by_default` = APP_ENV=test или env CELERY_TASK_ALWAYS_EAGER; основной сьют не требует живого Redis.
 - **ADR-014 пип-кэш в песочнице**: `.venv/` и `node_modules/` не переживают перезапуск песочницы → используем PIP_CACHE_DIR=/home/user/pipcache и npm_config_cache=/home/user/npmcache для быстрого восстановления (см. KNOWLEDGE).
+
+---
+
+# ADR-018 — Content Rewards: creator-only, Whop-first, provider-neutral (2026-09-22)
+Принято по директиве пользователя. Модуль rewards — отдельная доменная область `app/services/rewards/` (campaign_service, brief_parser, forecast, submission_service, analytics) + `app/services/compliance/` (rule engine). Provider-нейтральность через `RewardProvider` Protocol (аналогично реестру Publisher): первый провайдер `ManualContentRewardsProvider` — без сетевых вызовов к Content Rewards, готовит форму/checklist/countdown; автоматический провайдер добавляется ТОЛЬКО при появлении официального документированного API (обязательная ревизия docs.whop.com/llms.txt перед реализацией). Никакого scraping (правило проекта).
+
+# ADR-019 — Деньги и versioned campaign terms (2026-09-22)
+Все суммы — `Numeric(14,2)`/`Decimal`; CPM-ставки `Numeric(10,4)`. Изменчивые правила платформы (fee %, окно отправки, окно earnings, hold, min/max payout) — поля `reward_campaigns`/brief-версий с `source_url`+`terms_checked_at`, дефолты из KNOWLEDGE §7 (10% / 30 мин / 7 дней / 3 дня), подтверждение при импорте. Ни одно из этих чисел не хардкодится в логике.
+
+# ADR-020 — Compliance engine как отдельный сервис с фиксацией evidence (2026-09-22)
+`ComplianceCheckRun` — иммутабельный прогон по конкретной brief-версии; findings — по правилам CONTRACTS CR-3.2 с severity blocker|warning|manual_review. Визуальные/музыкальные требования НЕ считаются выполненными автоматически (manual_review). Render hash фиксируется в `campaign_clips.render_sha256` при публикации; подмена файла — blocker. Бюджет — снимок (не realtime): freshness-warning.
+
+# ADR-021 — Payout-aware ML: champion/challenger + shadow (2026-09-22)
+Расширение Stage-7 схемы: `training_runs` обобщается на engines (approval_classifier, view_forecast, payout_regression, ltr); артефакты получают role (champion|shadow|retired) и feature schema hash. Активация challenger — только при превосходстве champion на том же time/campaign/account-aware сплите; при недостатке данных — `insufficient_data` (без фиктивного обучения); drift/mismatch/битый артефакт — эвристика. Первые 50–100 публикаций — контролируемый сбор данных. Внешняя популярность — prior для признаков, не payout label.

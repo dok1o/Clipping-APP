@@ -5,7 +5,9 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.schemas.clip import ClipCreate, ClipPage, ClipRead
+from app.core.errors import AppError
+from app.schemas.rendered_asset import RenderedAssetRead as AssetRead
+from app.schemas.clip import ClipCreate, ClipPage, ClipRead, ClipUpdate
 from app.schemas.job import JobRead
 from app.services.clips import clip_service
 from app.services.render import render_service
@@ -34,6 +36,40 @@ def list_clips(
 @router.get("/clips/{clip_id}", response_model=ClipRead)
 def get_clip(clip_id: uuid.UUID, db: Session = Depends(get_db)):
     return clip_service.get_clip_or_404(db, clip_id)
+
+
+@router.get("/clips/{clip_id}/asset", response_model=AssetRead)
+def get_clip_asset(clip_id: uuid.UUID, db: Session = Depends(get_db)) -> AssetRead:
+    """Latest READY rendered asset for the clip (survives page reloads)."""
+    from sqlalchemy import select
+
+    from app.models.rendered_asset import RenderedAsset, RenderedAssetStatus
+
+    clip_service.get_clip_or_404(db, clip_id)
+    asset = db.scalars(
+        select(RenderedAsset)
+        .where(
+            RenderedAsset.clip_id == clip_id,
+            RenderedAsset.status == RenderedAssetStatus.READY,
+        )
+        .order_by(RenderedAsset.created_at.desc())
+        .limit(1)
+    ).first()
+    if asset is None:
+        raise AppError(404, "asset_not_found", "Clip has no ready rendered asset")
+    return asset
+
+
+@router.patch("/clips/{clip_id}", response_model=ClipRead)
+def patch_clip(
+    clip_id: uuid.UUID, payload: ClipUpdate, db: Session = Depends(get_db)
+) -> ClipRead:
+    return clip_service.update_clip(
+        db, clip_id,
+        title=payload.title,
+        start_sec=payload.start_sec,
+        end_sec=payload.end_sec,
+    )
 
 
 @router.post("/clips/{clip_id}/render", status_code=202, response_model=JobRead)

@@ -46,6 +46,16 @@ async function apiPost<T>(path: string, body?: unknown): Promise<T> {
   return (await response.json()) as T;
 }
 
+async function apiPatch<T>(path: string, body?: unknown): Promise<T> {
+  const response = await fetch(`${BASE_URL}${path}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body ?? {}),
+  });
+  if (!response.ok) throw await parseError(response);
+  return (await response.json()) as T;
+}
+
 async function apiUpload<T>(path: string, file: File): Promise<T> {
   const form = new FormData();
   form.append("file", file);
@@ -184,7 +194,86 @@ export interface GeneratedTexts {
   hashtags: string[];
 }
 
+export interface JobPage {
+  items: Job[];
+  total: number;
+}
+
+export interface OverviewStats {
+  videos: Record<string, number>;
+  clips: Record<string, number>;
+  jobs: Record<string, number>;
+  publications: Record<string, number>;
+  scheduled_next_at: string | null;
+  failed_jobs_recent: number;
+  latest_metrics: {
+    publications: number;
+    views: number;
+    likes: number;
+    comments: number;
+    shares: number;
+  };
+  ml: {
+    dataset_rows: number;
+    active_model: { model_version: string; backend: string } | null;
+  };
+}
+
+export interface HealthStatus {
+  status: string;
+  version: string;
+  checks: Record<string, string>;
+}
+
+// Upload with progress (fetch cannot report upload progress; XHR can).
+export function uploadVideoWithProgress(
+  file: File,
+  onProgress: (fraction: number) => void,
+): Promise<Video> {
+  return new Promise((resolve, reject) => {
+    const form = new FormData();
+    form.append("file", file);
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${BASE_URL}/api/v1/videos`);
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(event.loaded / event.total);
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as Video);
+        } catch {
+          reject(new ApiError(xhr.status, "invalid_response", "Некорректный ответ сервера", null));
+        }
+      } else {
+        try {
+          const detail = JSON.parse(xhr.responseText)?.detail;
+          reject(
+            detail?.code
+              ? new ApiError(xhr.status, detail.code, detail.message ?? "Upload failed", detail.fields ?? null)
+              : new ApiError(xhr.status, "http_error", `HTTP ${xhr.status}`, null),
+          );
+        } catch {
+          reject(new ApiError(xhr.status, "http_error", `HTTP ${xhr.status}`, null));
+        }
+      }
+    };
+    xhr.onerror = () => reject(new ApiError(0, "network_error", "Сеть недоступна", null));
+    xhr.send(form);
+  });
+}
+
 export const api = {
+  health: () => apiGet<HealthStatus>("/health"),
+  overview: () => apiGet<OverviewStats>("/api/v1/overview"),
+  listJobs: (params?: { status?: string; type?: string; limit?: number }) => {
+    const query = new URLSearchParams();
+    if (params?.status) query.set("status", params.status);
+    if (params?.type) query.set("type", params.type);
+    if (params?.limit) query.set("limit", String(params.limit));
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return apiGet<JobPage>(`/api/v1/jobs${suffix}`);
+  },
   // videos
   uploadVideo: (file: File) => apiUpload<Video>("/api/v1/videos", file),
   listVideos: (limit = 50, offset = 0) =>
@@ -201,6 +290,12 @@ export const api = {
     ),
   createManualClip: (videoId: string, body: { title: string; start_sec: number; end_sec: number }) =>
     apiPost<Clip>(`/api/v1/videos/${videoId}/clips/manual`, body),
+  patchClip: (
+    clipId: string,
+    body: { title?: string; start_sec?: number; end_sec?: number },
+  ) => apiPatch<Clip>(`/api/v1/clips/${clipId}`, body),
+  getClipAsset: (clipId: string) =>
+    apiGet<RenderedAsset>(`/api/v1/clips/${clipId}/asset`),
   renderClip: (clipId: string) =>
     apiPost<Job>(`/api/v1/clips/${clipId}/render`),
   getJob: (jobId: string) => apiGet<Job>(`/api/v1/jobs/${jobId}`),
@@ -232,6 +327,7 @@ export const api = {
     title: string;
     description?: string;
     privacy: string;
+    scheduled_at?: string;
   }) => apiPost<Publication>("/api/v1/publications/manual", body),
   listPublications: (params?: { clip_id?: string; platform?: string }) => {
     const query = new URLSearchParams();
@@ -241,6 +337,10 @@ export const api = {
     return apiGet<{ items: Publication[]; total: number }>(`/api/v1/publications${suffix}`);
   },
   // ml (Stage 7)
+  activeModel: () =>
+    apiGet<{ active: boolean; model_version: string | null; backend?: string }>(
+      "/api/v1/ml/active-model",
+    ),
   trainModel: () => apiPost<{ job_id: string }>("/api/v1/ml/train"),
   listTrainingRuns: () =>
     apiGet<{ items: TrainingRun[]; total: number }>("/api/v1/ml/runs"),

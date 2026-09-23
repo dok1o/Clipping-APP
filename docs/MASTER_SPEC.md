@@ -95,3 +95,23 @@
 - `docs/KNOWLEDGE.md` содержит проверенные URL официальных доков платформ с датами и ограничениями.
 - README quickstart: запуск с нуля несколькими командами.
 - Все Stage gates пройдены с отчётами §30 в PROGRESS.md.
+
+---
+
+# ЧАСТЬ 2 — Content Rewards: creator monetization (директива пользователя 2026-09-22)
+
+## Видение
+AI Clipper остаётся локальным self-hosted инструментом одного креатора, но целевая функция меняется: не «просмотры», а **чистая подтверждённая выплата**. Модуль Content Rewards: импорт платных кампаний (Whop Content Rewards первым), brief-комплаенс, публикации под требования, submissions с 30-минутным окном, трекинг выплат и обучение на собственном payout-опыте.
+
+## Главные KPI (замеряются через /api/v1/reward-analytics/summary)
+1. фактическая чистая подтверждённая выплата; 2. ожидаемая чистая выплата за клип; 3. выплата за час активной работы; 4. approval rate; 5. доля отправленных вовремя ссылок; 6. доля клипов без нарушений brief. Просмотры — промежуточный сигнал.
+
+## Принципы
+- **Creator-only**: модуль для креатора, не для бренда (brand-side функции вне скоупа).
+- **Whop-first, provider-neutral**: первый провайдер — Whop Content Rewards; архитектура — generic `RewardProvider` с capability discovery. Content Rewards submissions — РУЧНЫЕ до появления документированного официального API (проверка docs.whop.com/llms.txt обязательна перед любой автоматизацией; Bounties API ≠ Content Rewards).
+- **Только официальные API**: TikTok/YouTube/Instagram — официальные adapter'ы; никакого scraping, browser bots, накрутки, engagement pods, обхода лимитов, дублей submissions, связанных аккаунтов, чужих материалов.
+- **Человек в контуре**: никакой реальной публикации и submission без явного подтверждения пользователя; распознанный brief не активируется без подтверждения.
+- **Изменчивые правила — versioned data**: fee/окна/лимиты хранятся в термах кампании с URL и датой проверки, не в коде.
+- **Деньги**: Decimal/Numeric, USD первый, ISO currency ready. Forecast и actual — раздельно.
+- **ML payout-aware**: target — net_verified_payout (ranking: per active hour); shadow mode + champion/challenger; insufficient_data — честный ответ; fallback на эвристику при любом сбое. Никакого самоизменения кода.
+- **Стейджи CR-0..CR-9** и порядок — по директиве; CR-0 (аудит+контракты) — гейт: код не начинается до согласования моделей/API/миграций.

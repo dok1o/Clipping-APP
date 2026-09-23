@@ -33,3 +33,10 @@ class ClipRead(BaseModel):
 class ClipPage(BaseModel):
     items: list[ClipRead]
     total: int
+
+
+class ClipUpdate(BaseModel):
+    """PATCH /clips/{id}: editable while the clip is still a draft."""
+    title: str | None = Field(default=None, min_length=1, max_length=140)
+    start_sec: float | None = Field(default=None, ge=0)
+    end_sec: float | None = Field(default=None, ge=0)

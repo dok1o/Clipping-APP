@@ -31,3 +31,8 @@ class JobRead(BaseModel):
     finished_at: DateTimeUtc | None = None
     created_at: DateTimeUtc
     updated_at: DateTimeUtc
+
+
+class JobPage(BaseModel):
+    items: list[JobRead]
+    total: int
