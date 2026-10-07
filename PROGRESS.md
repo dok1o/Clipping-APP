@@ -5,7 +5,7 @@
 
 ## Текущий этап
 
-`CR-1 — фундамент кампаний реализован (миграция 0007 + модели + Decimal-деньги + импорт brief text/JSON/file); ожидается ревью → CR-2` (Stage 0–10 завершены; Stage 11–14 исходного плана — после CR-ветки)
+`Stage 11 (runtime-audit 2026-10-07): t11.1–t11.4 DONE — единый DB-контракт, schema-aware /ready, починенные verifiers, runtime smoke PASS; t11.5 frontend audit — в работе; CR-1 реализован (0007), выровнен по §14–21 аудита → ожидается ревью` (Stage 0–10 завершены)
 
 ---
 
@@ -395,3 +395,26 @@ Known limitations: S3-сохранение файла брифа тестиру�
 Восстановление (зафиксировано честно): 2026-09-23 песочница сброшена 6-й раз ПОСЛЕ реализации, но ДО получения ревью — .git откатился к e3b2d9f, локальный коммит (push запрещён) потерян из истории; всё содержимое CR-1 уцелело в рабочем дереве и восстановлено: fetch origin → reset --mixed на базу 9680966 (дерево не трогалось, дельта совпала с реализацией 1-в-1) → окружение пересобрано → ВСЕ проверки повторены с идентичными результатами (309 passed / 3 deselected; миграционный цикл 0006→0007→0006→0007, head 0007; git diff --check чист) → коммит создан повторно.
 Blockers: нет.
 **GATE: GO для CR-2** (AI brief parser → checklist) — фундамент: схемы, сервис и тесты готовы; ограничения CR-2: парсер не активирует бриф (pending_approval → явный approve), confidence < порога → ручной разбор.
+
+
+## Stage 11 — Runtime audit (2026-10-07) — t11.1–t11.4
+
+**Контекст**: независимый аудит реальным запуском (директива 2026-10-07) нашёл: launcher мигрировал не ту SQLite-базу (alembic → alembic-local.db, app → clipper-dev.db; /health = SELECT 1 → «ready» при пустой схеме; /api/v1/overview → 500 «no such table: videos»); ffmpeg/ffprobe недоступны (env-пути указывали на несуществующие файлы); verify_ffmpeg_render.py импортировал удалённый app.video_effects.renderer; README/AGENTS требовали несуществующие verify_s3.py/verify_db_redis.py.
+
+### t11.1 — единый DB-контракт (commit 5e11cbc)
+Причина mismatch: `SettingsConfigDict(env_file=".env")` — cwd-зависимость (app при cwd=backend читал backend/.env), а alembic/env.py брал URL только из env/alembic.ini. Исправлено: канонический env-файл = **корневой .env** (легаси-фолбэк backend/.env), путь абсолютный от `__file__`; `normalize_database_url()` анкерит относительные sqlite-пути в `backend/` (детерминированно при любом cwd/ОС); `resolve_database_url()` (env DATABASE_URL > канонический .env через Settings > alembic.ini для изолированных сценариев) — общий для app-engine и alembic/env.py; `%`-экранирование для set_main_option. Тесты (10): одинаковый URL из 4 разных cwd; приоритеты; launcher-path интеграция (временная DB → upgrade head → revision==head + videos/reward_campaigns → API на том же URL → /overview 200).
+
+### t11.2 — schema-aware readiness (commit d9a35b0)
+CONTRACTS §4.1a + ADR-022 (contract-first), вариант B: `/health` остаётся liveness (всегда 200); новый `GET /ready` — 200 `ready` только при db=ok AND schema=ok (alembic_version есть, revision == head скриптов, таблица videos есть) AND s3=ok; redis — честный skip в eager/dev, не гейтит; иначе 503 `not_ready`. Launcher (start_clipping_app.ps1) ждёт `/ready`; windows/health.ps1 показывает readiness и фейлится на not_ready. Тесты (5): пустая DB → 503 (db=ok, schema=no_alembic_version — соединения мало); мигрированная → 200; stale revision → 503; /health не изменён; sentinel-секрет не утекает в ответы.
+
+### t11.3 — verifiers (commit ba13259)
+`[media]`-экстра (imageio-ffmpeg — PyPI-пакет с официальной сборкой ffmpeg; ffprobe нет → честный fallback-парсер `ffmpeg -i`); verify_ffmpeg_render.py переписан на канонический `app.services.render.ffmpeg_runner` (list-args, PASS/FAIL/SKIP, cleanup); созданы verify_s3.py (S3Storage roundtrip + presigned отдельно, уникальный ключ, cleanup в finally, без печати кредов) и verify_db_redis.py (SELECT 1 + revision==head + таблицы; Redis ping+set/get/del уникального ключа, без flush*; eager → честный SKIP); README/AGENTS/windows-README синхронизированы (Windows-варианты команд).
+
+### t11.4 — runtime smoke (фактический вывод, песочница; commit ниже)
+- Стек: moto :4566 → alembic upgrade head (временная DB) → ensure_bucket → uvicorn :8000 → vite :5173.
+- Эндпоинты — все 200: `/` (frontend), `/health`, `/ready`, `/openapi.json`, `/api/v1/overview`, `/videos`, `/clips`, `/jobs`, `/publications`, `/ml/dataset-status`, `/reward-campaigns`. `/ready` = `{"status":"ready","checks":{"db":"ok","redis":"skip","s3":"ok","schema":"ok"}}` (redis skip — eager, честно).
+- **E2E с реальным ffmpeg**: upload (201) → manual clip (201) → render (202, eager celery, succeeded 2.75s) → asset **1080x1920 h264/aac ready 5.0s** → overview `{videos:{ready:1}, clips:{rendered:1}, jobs:{succeeded:1}}`. Аудиторский кейс «overview 500 на пустой схеме» воспроизведён как 503/not_ready до миграции и 200 после.
+- Остановка: все процессы остановлены, порты 4566/5173/8000 освобождены, временные DB/медиа удалены.
+- **Честные ограничения песочницы**: PowerShell-лаунчеры (start/stop_clipping_app.ps1, windows/*.ps1) выполняются только на Windows-машине пользователя (в песочнице нет pwsh) — их правки проверены код-ревью и pytest-покрытием логики (launcher-path тест), живой прогон `.\scripts\start_clipping_app.ps1 -NoBrowser -NoDialog` + двойной запуск/PID-поведение — на машине пользователя; verify_whisper.py — SKIP (faster-whisper не ставится в песочнице без доступа к model-хостингу; на машине пользователя проходил CPU-фолбэком по их PROGRESS); полная Full-mode инфраструктура (реальные PG/Redis/MinIO/worker/beat, Фаза F) — не проверена: Docker daemon не запущен на машине пользователя, в песочнице Docker отсутствует — требуется действие пользователя (см. блокеры).
+
+**Baseline-гейт (§12 аудита)**: backend 324 passed/3 deselected; real_services 3 passed (не SKIP); frontend — см. t11.5; migration cycle 0006→0007→0006→0007 + clean DB→head — PASS; launcher одна DB — PASS (pytest-интеграционно); overview после launcher-пути — 200; readiness проверяет схему — PASS; ffmpeg verifier — PASS (не SKIP); сломанный verifier устранён; verify_s3/verify_db_redis существуют и PASS; Git clean.
