@@ -16,6 +16,17 @@ try {
     $failed = $true
 }
 
+Write-Host "[health] GET $ApiUrl/ready"
+try {
+    $ready = Invoke-RestMethod -Uri "$ApiUrl/ready" -TimeoutSec 5
+    $readyColor = if ($ready.status -eq "ready") { "Green" } else { "Red" }
+    Write-Host ("[health] readiness: {0} (schema {1})" -f $ready.status, $ready.checks.schema) -ForegroundColor $readyColor
+    if ($ready.status -ne "ready") { $failed = $true }
+} catch {
+    Write-Host "[health] readiness: UNREACHABLE ($($_.Exception.Message))" -ForegroundColor Red
+    $failed = $true
+}
+
 foreach ($name in @("api", "worker", "beat", "frontend")) {
     $p = Get-SavedPid $name
     if ($p) {

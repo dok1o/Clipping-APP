@@ -245,7 +245,8 @@ try {
             -ArgumentList @("-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000") `
             -WorkingDirectory $backendRoot
     }
-    Wait-HttpOk -Name "Backend" -Url "http://127.0.0.1:8000/health"
+    # t11.2: readiness (schema-aware) — /health would report ok on an empty schema
+    Wait-HttpOk -Name "Backend readiness" -Url "http://127.0.0.1:8000/ready"
 
     if (-not (Test-TcpPort -HostName "127.0.0.1" -Port 5173)) {
         $nodeExe = (Get-Command node.exe -ErrorAction Stop).Source

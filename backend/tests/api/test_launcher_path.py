@@ -43,6 +43,9 @@ def test_launcher_migration_path_then_api_overview(tmp_path, monkeypatch, s3_moc
     db_session.init_engine(url)
     try:
         with TestClient(app) as client:
+            ready = client.get("/ready")
+            assert ready.status_code == 200, ready.text  # t11.2: launcher waits for THIS
+            assert ready.json()["checks"]["schema"] == "ok"
             response = client.get("/api/v1/overview")
             assert response.status_code == 200, response.text
             body = response.json()

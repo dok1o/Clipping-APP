@@ -142,6 +142,17 @@
 ```
 `checks.*` ∈ `ok | skip` (skip = сервис недоступен/не настроен; liveness всегда 200).
 
+### 4.1a GET /ready → 200 | 503 (runtime-audit t11.2, 2026-10-07)
+Readiness для launcher'а (он ждёт `/ready`, а не `/health`): проверяет СХЕМУ, а не только соединение.
+```json
+{"status": "ready", "version": "0.1.0", "checks": {"db": "ok", "schema": "ok", "s3": "ok", "redis": "ok"}}
+```
+- `db` — SELECT 1: `ok | error`;
+- `schema` — `ok | no_alembic_version | missing_tables | stale_revision:{rev} | error`: наличие `alembic_version`, совпадение revision с текущим head скриптов Alembic, наличие обязательной таблицы `videos`;
+- `s3` — head_bucket: `ok | skip | error` (для ready требуется `ok`);
+- `redis` — ping: `ok | skip` (skip допустим в eager/dev-режиме и НЕ гейтит ready).
+→ **200** `{"status": "ready"}` при `db=ok AND schema=ok AND s3=ok`; иначе **503** `{"status": "not_ready"}`. `/health` остаётся чистым liveness (всегда 200).
+
 ### 4.2 POST /api/v1/videos — загрузка (multipart/form-data, поле `file`)
 - Лимит `UPLOAD_MAX_MB` (default 1024); allowlist mime `video/mp4|video/quicktime|video/webm|video/x-matroska` + расширение `.mp4|.mov|.webm|.mkv`; потоковая запись чанками 1MB во временный файл (не в RAM), затем stream-upload в S3.
 - Content-Length > лимит (+2MB slack на multipart) → 413 **до** полной записи.
