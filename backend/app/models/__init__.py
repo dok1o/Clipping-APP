@@ -6,7 +6,7 @@ from app.models.metric import Metric
 from app.models.platform_account import PlatformAccount
 from app.models.publication import Publication, PublicationStatus
 from app.models.rendered_asset import RenderedAsset, RenderedAssetStatus
-from app.models.rewards import (
+from app.models.reward_campaign import (
     CampaignBriefVersion,
     CampaignTermsStatus,
     CampaignSourceAsset,

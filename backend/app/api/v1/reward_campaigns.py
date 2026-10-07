@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, get_storage
-from app.schemas.rewards import (
+from app.schemas.reward_campaign import (
     BriefCreate,
     BriefDecision,
     BriefVersionRead,
@@ -23,7 +23,7 @@ from app.schemas.rewards import (
     TermsVersionRead,
     TextImportRequest,
 )
-from app.services.rewards import campaign_service
+from app.services.rewards import campaign_service, import_service
 
 router = APIRouter(tags=["reward-campaigns"])
 
@@ -50,13 +50,13 @@ def _import_result(outcome) -> ImportResultRead:
 @router.post("/reward-campaigns/import", status_code=201, response_model=ImportResultRead)
 def import_campaign_json(payload: CampaignImportRequest, db: Session = Depends(get_db)):
     """JSON import: campaign + optional terms + optional brief."""
-    return _import_result(campaign_service.import_campaign(db, payload))
+    return _import_result(import_service.import_campaign(db, payload))
 
 
 @router.post("/reward-campaigns/import-text", status_code=201, response_model=ImportResultRead)
 def import_campaign_text(payload: TextImportRequest, db: Session = Depends(get_db)):
     """Text import: campaign fields + brief as plain raw_text."""
-    return _import_result(campaign_service.import_text(db, payload))
+    return _import_result(import_service.import_text(db, payload))
 
 
 @router.post("/reward-campaigns/import-file", status_code=201, response_model=ImportResultRead)
@@ -102,7 +102,7 @@ async def import_campaign_file(
         "budget_spent": budget_spent,
         "deadline_at": deadline,
     }
-    outcome = campaign_service.import_file(
+    outcome = import_service.import_file(
         db,
         filename=file.filename or "",
         content=content,

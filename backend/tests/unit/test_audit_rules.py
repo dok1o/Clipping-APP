@@ -56,3 +56,24 @@ def test_no_ffprobe_import_in_clip_service() -> None:
     src = (APP_DIR / "services" / "clips" / "clip_service.py").read_text(encoding="utf-8")
     for forbidden in ("ffmpeg", "ffprobe", "probe_media", "subprocess"):
         assert forbidden not in src, f"clip_service must not reference {forbidden}"
+
+
+def test_no_float_money_in_rewards() -> None:
+    """CR-0.4 / audit §21: money is Decimal-only — no float usage in the
+    rewards services or the reward schemas (AST-based: float() casts,
+    float annotations/parameters; strings and error messages exempt)."""
+    import ast
+
+    targets = sorted((APP_DIR / "services" / "rewards").rglob("*.py"))
+    targets.append(APP_DIR / "schemas" / "reward_campaign.py")
+    offenders = []
+    for p in targets:
+        tree = ast.parse(p.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and getattr(node.func, "id", None) == "float":
+                offenders.append(f"{p.name}:{node.lineno} float() cast")
+            if isinstance(node, ast.AnnAssign) and isinstance(node.annotation, ast.Name) and node.annotation.id == "float":
+                offenders.append(f"{p.name}:{node.lineno} float annotation")
+            if isinstance(node, ast.arg) and isinstance(node.annotation, ast.Name) and node.annotation.id == "float":
+                offenders.append(f"{p.name}:{node.lineno} float parameter")
+    assert offenders == [], f"float money usage found: {offenders}"

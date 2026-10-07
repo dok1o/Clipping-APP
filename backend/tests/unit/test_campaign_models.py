@@ -10,7 +10,7 @@ from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
 
 from app.db import session as db_session
-from app.models.rewards import (
+from app.models.reward_campaign import (
     CampaignBriefVersion,
     CampaignSourceAsset,
     CampaignTermsVersion,

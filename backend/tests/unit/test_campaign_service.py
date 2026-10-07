@@ -9,13 +9,13 @@ import pytest
 
 from app.core.errors import AppError
 from app.db import session as db_session
-from app.models.rewards import (
+from app.models.reward_campaign import (
     CampaignBriefVersion,
     CampaignSourceAsset,
     CampaignTermsVersion,
     RewardCampaign,
 )
-from app.schemas.rewards import (
+from app.schemas.reward_campaign import (
     BriefInput,
     CampaignImportRequest,
     SourceAssetInput,
@@ -23,6 +23,7 @@ from app.schemas.rewards import (
     TextImportRequest,
 )
 from app.services.rewards import campaign_service as svc
+from app.services.rewards import import_service
 
 NOW = datetime(2026, 9, 23, 12, 0, tzinfo=timezone.utc)
 
@@ -69,7 +70,7 @@ def _import_req(**kw) -> CampaignImportRequest:
 
 class TestImportDeterminism:
     def test_first_import_creates_campaign_terms_brief(self, db) -> None:
-        out = svc.import_campaign(db, _import_req(
+        out = import_service.import_campaign(db, _import_req(
             terms=_terms_req(),
             brief=BriefInput(
                 raw_text="Use the sound, tag @brand, 15-60s",
@@ -93,8 +94,8 @@ class TestImportDeterminism:
 
     def test_reimport_same_payload_is_idempotent(self, db) -> None:
         req = _import_req(terms=_terms_req(), imported_payload={"k": "v"})
-        first = svc.import_campaign(db, req)
-        second = svc.import_campaign(db, req)
+        first = import_service.import_campaign(db, req)
+        second = import_service.import_campaign(db, req)
         assert second.created is False
         assert second.campaign.id == first.campaign.id
         assert second.terms_created is False
@@ -105,15 +106,15 @@ class TestImportDeterminism:
 
     def test_reimport_with_same_brief_reuses_version(self, db) -> None:
         req = _import_req(brief=BriefInput(raw_text="Brief text", source_url="https://whop.example/camp-1"))
-        first = svc.import_campaign(db, req)
-        second = svc.import_campaign(db, req)
+        first = import_service.import_campaign(db, req)
+        second = import_service.import_campaign(db, req)
         assert second.brief_created is False
         assert second.brief_version.id == first.brief_version.id
         assert db.query(CampaignBriefVersion).count() == 1
 
     def test_reimport_updates_operational_snapshot(self, db) -> None:
-        svc.import_campaign(db, _import_req(status="draft", budget_total=None))
-        out = svc.import_campaign(db, _import_req(
+        import_service.import_campaign(db, _import_req(status="draft", budget_total=None))
+        out = import_service.import_campaign(db, _import_req(
             status="active", budget_total=Decimal("5000.00"), budget_spent=Decimal("100.00"),
         ))
         assert out.created is False
@@ -121,8 +122,8 @@ class TestImportDeterminism:
         assert out.campaign.budget_total == Decimal("5000.00")
 
     def test_changed_terms_create_next_version(self, db) -> None:
-        first = svc.import_campaign(db, _import_req(terms=_terms_req()))
-        second = svc.import_campaign(db, _import_req(
+        first = import_service.import_campaign(db, _import_req(terms=_terms_req()))
+        second = import_service.import_campaign(db, _import_req(
             terms=_terms_req(creator_fee_percent=Decimal("12.00")),
         ))
         assert second.terms_created is True
@@ -147,25 +148,25 @@ class TestTermsValidation:
     )
     def test_matrix_violations_rejected_422(self, db, fields) -> None:
         with pytest.raises(AppError) as err:
-            svc.import_campaign(db, _import_req(terms=_terms_req(**fields)))
+            import_service.import_campaign(db, _import_req(terms=_terms_req(**fields)))
         assert err.value.status_code == 422
         assert err.value.code == "invalid_campaign_terms"
         assert isinstance(err.value.fields, dict) and err.value.fields
 
     def test_max_below_min_rejected(self, db) -> None:
         with pytest.raises(AppError) as err:
-            svc.import_campaign(db, _import_req(terms=_terms_req(
+            import_service.import_campaign(db, _import_req(terms=_terms_req(
                 min_payout=Decimal("10.00"), max_payout_per_clip=Decimal("5.00"),
             )))
         assert err.value.code == "invalid_campaign_terms"
         assert "max_payout_per_clip" in err.value.fields
 
     def test_valid_per_post_and_retainer(self, db) -> None:
-        out = svc.import_campaign(db, _import_req(terms=_terms_req(
+        out = import_service.import_campaign(db, _import_req(terms=_terms_req(
             payout_model="per_post", cpm_rate=None, per_post_amount=Decimal("250.00"),
         )))
         assert out.terms_version.payout_model == "per_post"
-        out2 = svc.import_campaign(db, _import_req(
+        out2 = import_service.import_campaign(db, _import_req(
             external_campaign_id="camp-2",
             terms=_terms_req(
                 payout_model="retainer", cpm_rate=None,
@@ -177,13 +178,13 @@ class TestTermsValidation:
 
 class TestTermsLifecycle:
     def test_confirm_moves_pointer_and_stamps_time(self, db) -> None:
-        out = svc.import_campaign(db, _import_req(terms=_terms_req()))
+        out = import_service.import_campaign(db, _import_req(terms=_terms_req()))
         campaign, version = svc.confirm_terms(db, out.campaign.id, out.terms_version.id)
         assert campaign.current_terms_version_id == version.id
         assert version.confirmed_at is not None
 
     def test_confirm_is_idempotent(self, db) -> None:
-        out = svc.import_campaign(db, _import_req(terms=_terms_req()))
+        out = import_service.import_campaign(db, _import_req(terms=_terms_req()))
         _, v1 = svc.confirm_terms(db, out.campaign.id, out.terms_version.id)
         first_confirmed = v1.confirmed_at
         _, v2 = svc.confirm_terms(db, out.campaign.id, out.terms_version.id)
@@ -191,7 +192,7 @@ class TestTermsLifecycle:
         assert db.query(CampaignTermsVersion).count() == 1
 
     def test_confirm_new_version_moves_pointer_only_on_action(self, db) -> None:
-        out = svc.import_campaign(db, _import_req(terms=_terms_req()))
+        out = import_service.import_campaign(db, _import_req(terms=_terms_req()))
         v2, _ = svc.add_terms_version(
             db, out.campaign.id, _terms_req(creator_fee_percent=Decimal("0"))
         )
@@ -205,7 +206,7 @@ class TestTermsLifecycle:
         assert out.campaign.current_terms_version_id == v2.id
 
     def test_confirm_wrong_campaign_404(self, db) -> None:
-        out = svc.import_campaign(db, _import_req(terms=_terms_req()))
+        out = import_service.import_campaign(db, _import_req(terms=_terms_req()))
         other_id = uuid.uuid4()
         with pytest.raises(AppError) as err:
             svc.confirm_terms(db, other_id, out.terms_version.id)
@@ -213,10 +214,10 @@ class TestTermsLifecycle:
 
     def test_import_never_confirms(self, db) -> None:
         """Even a re-import of already-confirmed terms does not touch the pointer."""
-        out = svc.import_campaign(db, _import_req(terms=_terms_req()))
+        out = import_service.import_campaign(db, _import_req(terms=_terms_req()))
         svc.confirm_terms(db, out.campaign.id, out.terms_version.id)
         db.commit()
-        again = svc.import_campaign(db, _import_req(terms=_terms_req()))
+        again = import_service.import_campaign(db, _import_req(terms=_terms_req()))
         db.refresh(again.campaign)
         assert again.campaign.current_terms_version_id == out.terms_version.id
         assert again.terms_version.confirmed_at is not None  # reuse, not a new row
@@ -224,13 +225,13 @@ class TestTermsLifecycle:
 
 class TestBriefLifecycle:
     def test_add_brief_requires_source(self, db) -> None:
-        out = svc.import_campaign(db, _import_req())
+        out = import_service.import_campaign(db, _import_req())
         with pytest.raises(AppError) as err:
             svc.add_brief_version(db, out.campaign.id, source_url=out.campaign.source_url)
         assert err.value.status_code == 422
 
     def test_approve_sets_active_pointer_and_supersedes(self, db) -> None:
-        out = svc.import_campaign(db, _import_req(brief=BriefInput(raw_text="v1")))
+        out = import_service.import_campaign(db, _import_req(brief=BriefInput(raw_text="v1")))
         v1 = out.brief_version
         approved = svc.decide_brief(db, out.campaign.id, v1.id, "approve")
         db.commit()
@@ -254,7 +255,7 @@ class TestBriefLifecycle:
         assert out.campaign.active_brief_version_id == v2.id
 
     def test_reject_keeps_pointer_null(self, db) -> None:
-        out = svc.import_campaign(db, _import_req(brief=BriefInput(raw_text="v1")))
+        out = import_service.import_campaign(db, _import_req(brief=BriefInput(raw_text="v1")))
         rejected = svc.decide_brief(db, out.campaign.id, out.brief_version.id, "reject")
         db.commit()
         assert rejected.status == "rejected"
@@ -262,13 +263,13 @@ class TestBriefLifecycle:
         assert out.campaign.active_brief_version_id is None
 
     def test_reapprove_is_idempotent(self, db) -> None:
-        out = svc.import_campaign(db, _import_req(brief=BriefInput(raw_text="v1")))
+        out = import_service.import_campaign(db, _import_req(brief=BriefInput(raw_text="v1")))
         svc.decide_brief(db, out.campaign.id, out.brief_version.id, "approve")
         again = svc.decide_brief(db, out.campaign.id, out.brief_version.id, "approve")
         assert again.status == "approved"
 
     def test_approve_rejected_conflict(self, db) -> None:
-        out = svc.import_campaign(db, _import_req(brief=BriefInput(raw_text="v1")))
+        out = import_service.import_campaign(db, _import_req(brief=BriefInput(raw_text="v1")))
         svc.decide_brief(db, out.campaign.id, out.brief_version.id, "reject")
         with pytest.raises(AppError) as err:
             svc.decide_brief(db, out.campaign.id, out.brief_version.id, "approve")
@@ -281,7 +282,7 @@ class TestBriefLifecycle:
             source_url="https://whop.example/txt",
             raw_text="Post with #tag, disclosure in caption",
         )
-        out = svc.import_text(db, req)
+        out = import_service.import_text(db, req)
         assert out.brief_version.raw_text == "Post with #tag, disclosure in caption"
         assert out.brief_version.status == "pending_approval"
 
@@ -307,7 +308,7 @@ class TestImportFile:
             },
             "brief": {"raw_text": "FromFile brief"},
         }
-        out = svc.import_file(
+        out = import_service.import_file(
             db,
             filename="campaign.json",
             content=json.dumps(payload).encode(),
@@ -327,15 +328,15 @@ class TestImportFile:
             "source_url": "https://whop.example/file2",
             "brief": {"raw_text": "Same brief"},
         }).encode()
-        first = svc.import_file(db, filename="c.json", content=content, form_fields={}, storage=None)
-        second = svc.import_file(db, filename="c.json", content=content, form_fields={}, storage=None)
+        first = import_service.import_file(db, filename="c.json", content=content, form_fields={}, storage=None)
+        second = import_service.import_file(db, filename="c.json", content=content, form_fields={}, storage=None)
         assert second.created is False
         assert second.brief_created is False
         assert second.brief_version.id == first.brief_version.id
 
     def test_text_file_requires_campaign_fields(self, db) -> None:
         with pytest.raises(AppError) as err:
-            svc.import_file(
+            import_service.import_file(
                 db, filename="brief.txt",
                 content=b"some brief text",
                 form_fields={"provider": "whop_content_rewards"},  # missing required
@@ -346,19 +347,19 @@ class TestImportFile:
 
     def test_bad_extension_rejected(self, db) -> None:
         with pytest.raises(AppError) as err:
-            svc.import_file(db, filename="brief.docx", content=b"x", form_fields={}, storage=None)
+            import_service.import_file(db, filename="brief.docx", content=b"x", form_fields={}, storage=None)
         assert err.value.status_code == 415
 
     def test_invalid_json_rejected(self, db) -> None:
         with pytest.raises(AppError) as err:
-            svc.import_file(db, filename="c.json", content=b"{not json", form_fields={}, storage=None)
+            import_service.import_file(db, filename="c.json", content=b"{not json", form_fields={}, storage=None)
         assert err.value.code == "invalid_import_file"
 
     def test_json_array_rejected(self, db) -> None:
         import json
 
         with pytest.raises(AppError) as err:
-            svc.import_file(
+            import_service.import_file(
                 db, filename="c.json", content=json.dumps([1, 2]).encode(),
                 form_fields={}, storage=None,
             )

@@ -68,6 +68,64 @@ class TestFeeNet:
             compute_fee(10.5, Decimal("10"))  # type: ignore[arg-type]
 
 
+class TestPrecisionLimits:
+    """§17: overflow / too-precise money values are REJECTED at the schema edge."""
+
+    def _terms(self, **kw):
+        from app.schemas.reward_campaign import TermsInput
+        from datetime import datetime, timezone
+
+        base = dict(
+            payout_model="cpm",
+            cpm_rate="10.0000",
+            creator_fee_percent="10.00",
+            fee_free_budget_threshold="5000.00",
+            earnings_window_days=7,
+            payout_hold_days=3,
+            submission_deadline_minutes=30,
+            terms_source_url="https://x",
+            terms_checked_at=datetime(2026, 10, 7, tzinfo=timezone.utc),
+        )
+        base.update(kw)
+        return TermsInput(**base)
+
+    def test_cpm_rate_overflow_rejected(self) -> None:
+        import pytest
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            self._terms(cpm_rate="12345678901.0000")  # 11 integer digits > NUMERIC(10,4)
+
+    def test_amount_precision_rejected(self) -> None:
+        import pytest
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            self._terms(
+                payout_model="per_post", cpm_rate=None,
+                per_post_amount="150.123",  # 3 decimal places > NUMERIC(14,2)
+            )
+
+    def test_amount_overflow_rejected(self) -> None:
+        import pytest
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            self._terms(
+                payout_model="per_post", cpm_rate=None,
+                per_post_amount="123456789012345.00",  # 15 integer digits > NUMERIC(14,2)
+            )
+
+    def test_big_valid_values_accepted(self) -> None:
+        t = self._terms(
+            min_payout="9999999999.99",          # 10 int digits, fits (14,2)
+            max_payout_per_clip="9999999999.99",
+        )
+        assert str(t.min_payout) == "9999999999.99"
+        cpm = self._terms(cpm_rate="999999.9999")  # 6 int digits, fits (10,4)
+        assert str(cpm.cpm_rate) == "999999.9999"
+
+
 class TestContentHash:
     def test_canonical_json_stable(self) -> None:
         a = {"payout_model": "cpm", "cpm_rate": "10.0000", "nested": {"b": 1, "a": 2}}
