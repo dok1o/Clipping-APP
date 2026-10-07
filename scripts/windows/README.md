@@ -11,6 +11,7 @@ powershell -ExecutionPolicy Bypass -File scripts\windows\stop.ps1            # �
 ```
 
 Требования: Python 3.11+ и Node 20+ на PATH; `.env` в корне (из `.env.example`) — подхватывается автоматически.
+Readiness: `health.ps1` проверяет `/ready` (схема: alembic revision == head, таблицы на месте), а не только liveness `/health`.
 PID-файлы пишутся в `.run/` (вне git). `worker`/`beat` требуют живой Redis (`REDIS_URL`); без него используйте
 запуск только API — Celery работает в eager-режиме (`CELERY_TASK_ALWAYS_EAGER=1` в `.env`).
 

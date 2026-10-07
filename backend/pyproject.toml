@@ -32,6 +32,9 @@ ml = [
 
 dev = ["pytest>=8.0", "moto[s3,server]>=5.0"]
 whisper = ["faster-whisper>=1.0"]
+# runtime-audit t11.3/C: verifiable ffmpeg source via PyPI (bundles an official
+# ffmpeg build; ffprobe is NOT included — metadata uses the ffmpeg -i fallback).
+media = ["imageio-ffmpeg>=0.5"]
 
 [tool.setuptools.packages.find]
 include = ["app*"]

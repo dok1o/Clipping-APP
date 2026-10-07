@@ -107,8 +107,24 @@ def main() -> int:
     env_ffprobe = os.environ.get("FFPROBE_PATH")
     ffmpeg = (shutil.which(env_ffmpeg) if env_ffmpeg else None) or shutil.which("ffmpeg")
     ffprobe = (shutil.which(env_ffprobe) if env_ffprobe else None) or shutil.which("ffprobe")
+    ffmpeg_source = "FFMPEG_PATH/PATH"
     if not ffmpeg:
-        print("[SKIP] ffmpeg not available on this machine. Install ffmpeg and re-run.")
+        # t11.3 fallback: imageio-ffmpeg PyPI package (pip install -e ".[media]")
+        # bundles an official ffmpeg build — a verifiable source, not a random
+        # download. ffprobe is NOT included: metadata uses the ffmpeg -i parser.
+        try:
+            import imageio_ffmpeg
+
+            candidate = imageio_ffmpeg.get_ffmpeg_exe()
+            if candidate and Path(candidate).exists():
+                ffmpeg = candidate
+                ffmpeg_source = "imageio-ffmpeg"
+        except Exception:  # noqa: BLE001 - optional extra not installed
+            pass
+    if not ffmpeg:
+        print("[SKIP] ffmpeg not available on this machine.")
+        print("       Install ffmpeg (e.g. 'winget install Gyan.FFmpeg' on Windows) or")
+        print("       pip install -e '.[media]' (imageio-ffmpeg bundles an official build).")
         print("       The pytest suite covers the runner with fakes; this script is the real-binary check.")
         return 0
 
@@ -121,6 +137,7 @@ def main() -> int:
 
     version = subprocess.run([ffmpeg, "-version"], capture_output=True, text=True).stdout.splitlines()[0]
     print(f"      {version}")
+    print(f"      ffmpeg source: {ffmpeg_source}")
     print(f"      probe mode: {probe_mode}")
 
     from app.core.config import get_settings

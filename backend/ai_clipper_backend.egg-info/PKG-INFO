@@ -25,3 +25,5 @@ Requires-Dist: pytest>=8.0; extra == "dev"
 Requires-Dist: moto[s3,server]>=5.0; extra == "dev"
 Provides-Extra: whisper
 Requires-Dist: faster-whisper>=1.0; extra == "whisper"
+Provides-Extra: media
+Requires-Dist: imageio-ffmpeg>=0.5; extra == "media"

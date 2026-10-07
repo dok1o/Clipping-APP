@@ -59,10 +59,30 @@ cd backend && ../.venv/bin/pytest -m "not real_services"
 cd backend && RUN_REAL_INTEGRATION=1 ../.venv/bin/pytest -m real_services
 
 # runtime-проверки окружения (честные PASS/FAIL/SKIP):
-./.venv/bin/python scripts/verify_ffmpeg.py      # синтетика + вертикальный рендер 1080x1920
-./.venv/bin/python scripts/verify_s3.py          # MinIO/S3 roundtrip (нужны ключи)
-./.venv/bin/python scripts/verify_db_redis.py    # PostgreSQL + Redis connectivity
+./.venv/bin/python scripts/verify_ffmpeg.py          # синтетика + вертикальный рендер 1080x1920 (h264/aac/yuv420p/faststart)
+./.venv/bin/python scripts/verify_ffmpeg_render.py <video.mp4> --start 1 --end 3   # рендер через канонический ffmpeg_runner
+./.venv/bin/python scripts/verify_s3.py              # S3/MinIO roundtrip: bucket/upload/exists/read/presigned/delete
+./.venv/bin/python scripts/verify_db_redis.py        # DB (SELECT 1 + alembic revision + таблицы) + Redis ping/roundtrip
+./.venv/bin/python scripts/verify_platform.py --dry-run   # TikTok (mock transport, безопасен везде)
+./.venv/bin/python scripts/verify_youtube.py         # YouTube (dry, mock transport)
+./.venv/bin/python scripts/verify_whisper.py         # faster-whisper ([whisper] extra; без него честный SKIP)
 ```
+
+Windows (PowerShell, из корня репо):
+
+```powershell
+& .\.venv\Scripts\python.exe scripts/verify_ffmpeg.py
+& .\.venv\Scripts\python.exe scripts/verify_s3.py
+& .\.venv\Scripts\python.exe scripts/verify_db_redis.py
+& .\.venv\Scripts\python.exe scripts/verify_platform.py --dry-run
+& .\.venv\Scripts\python.exe scripts/verify_youtube.py
+& .\.venv\Scripts\python.exe scripts/verify_whisper.py
+```
+
+Если ffmpeg не установлен в системе: `pip install -e ".[media]"` ставит
+`imageio-ffmpeg` (PyPI-пакет с официальной сборкой ffmpeg; ffprobe в нём нет —
+метаданные читаются fallback-парсером `ffmpeg -i`). Альтернатива —
+`winget install Gyan.FFmpeg`.
 
 ### Проверки, которые нужно выполнить на реальной машине (GPU/ffmpeg/ключи)
 

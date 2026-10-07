@@ -46,8 +46,11 @@ cd frontend && npm install && npm run build && npm run typecheck && npm run dev
 
 # --- runtime-verify скрипты (честные PASS/FAIL/SKIP) ---
 ./.venv/bin/python scripts/verify_ffmpeg.py
+./.venv/bin/python scripts/verify_ffmpeg_render.py <video.mp4> --start 1 --end 3
 ./.venv/bin/python scripts/verify_s3.py
 ./.venv/bin/python scripts/verify_db_redis.py
+# Windows: & .\.venv\Scripts\python.exe scripts/<name>.py
+# ffmpeg без системы: pip install -e ".[media]" (imageio-ffmpeg, официальный бинарь из PyPI)
 ```
 
 ## Структура

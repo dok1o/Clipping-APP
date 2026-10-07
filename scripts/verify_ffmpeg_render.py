@@ -1,82 +1,119 @@
+#!/usr/bin/env python3
+"""Real render verification through the CANONICAL renderer (runtime-audit t11.3).
+
+Replaces the legacy verifier that imported the removed `app.video_effects.renderer`
+module (audit defect 4.3). The only module allowed to run ffmpeg in this project is
+`app.services.render.ffmpeg_runner` — this script uses exactly that.
+
+Honest result codes: PASS / FAIL / SKIP (with the reason).
+"""
 from __future__ import annotations
 
 import argparse
+import shutil
 import sys
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 BACKEND_ROOT = PROJECT_ROOT / "backend"
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from app.video_effects.renderer import FfmpegRenderError, OUTPUT_FORMAT, render_vertical_clip
+from app.services.render.ffmpeg_runner import render_vertical  # noqa: E402
 
 
-@dataclass(frozen=True)
-class VerificationClipContext:
-    input_path: Path
-    start: float
-    end: float
-    output_path: Path
+def discover_ffmpeg() -> str | None:
+    """FFMPEG_PATH env/settings -> PATH -> imageio-ffmpeg bundled build."""
+    import os
 
-    @property
-    def duration(self) -> float:
-        return self.end - self.start
+    from app.core.config import get_settings
+
+    for candidate in (os.environ.get("FFMPEG_PATH"), get_settings().ffmpeg_path, "ffmpeg"):
+        if candidate:
+            found = shutil.which(candidate)
+            if found:
+                return found
+    try:
+        import imageio_ffmpeg
+
+        candidate = imageio_ffmpeg.get_ffmpeg_exe()
+        if candidate and Path(candidate).exists():
+            return candidate
+    except Exception:  # noqa: BLE001 - optional [media] extra not installed
+        return None
+    return None
 
 
 def main() -> int:
     args = parse_args()
-    try:
-        context = build_context(args)
-        render_vertical_clip(
-            input_path=context.input_path,
-            output_path=context.output_path,
-            start=context.start,
-            duration=context.duration,
-        )
-    except (FfmpegRenderError, OSError, ValueError) as exc:
-        print(f"render verification failed: {exc}", file=sys.stderr)
+    ffmpeg = discover_ffmpeg()
+    if not ffmpeg:
+        print("[SKIP] ffmpeg binary not available (FFMPEG_PATH, PATH, imageio-ffmpeg).")
+        print("       Install ffmpeg or: pip install -e '.[media]'")
+        return 0
+
+    from app.core.config import get_settings
+
+    input_path = args.input_video.expanduser().resolve()
+    if not input_path.is_file():
+        print(f"[FAIL] input video does not exist: {input_path}")
+        return 1
+    if args.start < 0:
+        print("[FAIL] start must be >= 0")
+        return 1
+    if args.end <= args.start:
+        print("[FAIL] end must be greater than start")
         return 1
 
-    print(context.output_path)
-    return 0
+    keep_output = args.output is not None
+    if keep_output:
+        output_path = args.output.expanduser().resolve()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_ctx = None
+    else:
+        tmp_ctx = tempfile.TemporaryDirectory(prefix="ai-clipper-render-verify-")
+        output_path = Path(tmp_ctx.name) / "rendered.mp4"
+
+    try:
+        render_vertical(
+            input_path,
+            output_path,
+            start_sec=args.start,
+            duration_sec=args.end - args.start,
+            ffmpeg_path=ffmpeg,
+            timeout_sec=get_settings().ffmpeg_timeout_sec,
+        )
+        size = output_path.stat().st_size if output_path.exists() else 0
+        if size <= 0:
+            print(f"[FAIL] renderer produced no output ({output_path})")
+            return 1
+        print(f"[PASS] render_vertical {args.end - args.start:.2f}s via canonical ffmpeg_runner")
+        print(f"       output: {output_path} ({size} bytes)")
+        print(f"       ffmpeg: {ffmpeg}")
+        print("\nRESULT: PASS")
+        return 0
+    except Exception as exc:  # noqa: BLE001 - verifier reports every failure honestly
+        print(f"[FAIL] render failed: {type(exc).__name__}: {exc}")
+        print("\nRESULT: FAIL")
+        return 1
+    finally:
+        if tmp_ctx is not None:
+            tmp_ctx.cleanup()  # no temp files left behind
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run a local ffmpeg render verification using the project renderer.")
+    parser = argparse.ArgumentParser(
+        description="Verify a real vertical render using the project's canonical ffmpeg_runner."
+    )
     parser.add_argument("input_video", type=Path, help="Path to an existing source video file.")
     parser.add_argument("--start", type=float, default=0.0, help="Clip start timestamp in seconds.")
     parser.add_argument("--end", type=float, default=2.0, help="Clip end timestamp in seconds.")
-    parser.add_argument("--output", type=Path, default=None, help="Optional output MP4 path.")
-    return parser.parse_args()
-
-
-def build_context(args: argparse.Namespace) -> VerificationClipContext:
-    input_path = args.input_video.expanduser().resolve()
-    if not input_path.is_file():
-        raise ValueError(f"input video does not exist: {input_path}")
-    if args.start < 0:
-        raise ValueError("start must be >= 0")
-    if args.end <= args.start:
-        raise ValueError("end must be greater than start")
-
-    output_path = args.output
-    if output_path is None:
-        output_dir = Path(tempfile.mkdtemp(prefix="ai-clipper-render-verify-"))
-        output_path = output_dir / f"rendered.{OUTPUT_FORMAT}"
-    else:
-        output_path = output_path.expanduser().resolve()
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    return VerificationClipContext(
-        input_path=input_path,
-        start=args.start,
-        end=args.end,
-        output_path=output_path,
+    parser.add_argument(
+        "--output", type=Path, default=None,
+        help="Optional output MP4 path (keeps the file; without it the render is temporary).",
     )
+    return parser.parse_args()
 
 
 if __name__ == "__main__":

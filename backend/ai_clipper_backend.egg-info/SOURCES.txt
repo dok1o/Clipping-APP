@@ -17,6 +17,7 @@ app/api/v1/ml.py
 app/api/v1/overview.py
 app/api/v1/publications.py
 app/api/v1/renders.py
+app/api/v1/rewards.py
 app/api/v1/router.py
 app/api/v1/texts.py
 app/api/v1/transcripts.py
@@ -41,6 +42,7 @@ app/models/metric.py
 app/models/platform_account.py
 app/models/publication.py
 app/models/rendered_asset.py
+app/models/rewards.py
 app/models/training_run.py
 app/models/transcript.py
 app/models/video.py
@@ -54,6 +56,7 @@ app/schemas/ml.py
 app/schemas/overview.py
 app/schemas/publication.py
 app/schemas/rendered_asset.py
+app/schemas/rewards.py
 app/schemas/text_gen.py
 app/schemas/transcription.py
 app/schemas/video.py
@@ -79,6 +82,9 @@ app/services/publish/youtube.py
 app/services/render/__init__.py
 app/services/render/ffmpeg_runner.py
 app/services/render/render_service.py
+app/services/rewards/__init__.py
+app/services/rewards/campaign_service.py
+app/services/rewards/money.py
 app/services/text_gen/__init__.py
 app/services/text_gen/base.py
 app/services/text_gen/fake_provider.py
