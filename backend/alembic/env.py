@@ -14,8 +14,14 @@ from app.db.base import Base  # noqa: E402
 
 target_metadata = Base.metadata
 
-db_url = os.environ.get("DATABASE_URL") or config.get_main_option("sqlalchemy.url") or "sqlite:///./alembic-local.db"
-config.set_main_option("sqlalchemy.url", db_url)
+# t11.1: URL resolution is SHARED with the app engine (app.core.config).
+# Priority: DATABASE_URL env var > canonical .env (Settings) > alembic.ini
+# (isolated tooling fallback). Relative sqlite paths are anchored at backend/.
+from app.core.config import resolve_database_url
+
+db_url = resolve_database_url(config.get_main_option("sqlalchemy.url"))
+# set_main_option interpolates '%': escape percent signs (e.g. PG passwords).
+config.set_main_option("sqlalchemy.url", db_url.replace("%", "%%"))
 
 
 def run_migrations_offline() -> None:

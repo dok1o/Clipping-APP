@@ -1,16 +1,79 @@
 """Application settings (pydantic-settings). Single source of env parsing.
 
 Env names and defaults mirror the master spec (see .env.example at repo root).
+
+Runtime-audit t11.1 (2026-10-07): the env file and the SQLite path no longer
+depend on the current working directory. The canonical env file is the
+REPO ROOT .env (legacy backend/.env is honoured as a fallback), and relative
+SQLite URLs are anchored at backend/ — so the app, Alembic, workers and
+verifier scripts always open the SAME database, whatever the cwd is.
 """
+import os
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+_SQLITE_PREFIXES = ("sqlite+pysqlite:///", "sqlite:///")
+
+
+def canonical_env_file() -> Path:
+    """One canonical env file: repo root .env if present, else legacy backend/.env."""
+    root_env = REPO_ROOT / ".env"
+    if root_env.exists():
+        return root_env
+    return BACKEND_DIR / ".env"
+
+
+def normalize_database_url(url: str) -> str:
+    """Anchor relative SQLite paths at BACKEND_DIR (cwd-independent, t11.1).
+
+    sqlite:///clipper-dev.db -> sqlite:///{backend}/clipper-dev.db on every OS,
+    for every entry point (app engine, alembic, workers, scripts). Absolute
+    paths, :memory: and file: URIs pass through unchanged.
+    """
+    for prefix in _SQLITE_PREFIXES:
+        if url.startswith(prefix):
+            path_part = url[len(prefix):]
+            if (
+                not path_part
+                or path_part.startswith("/")
+                or path_part == ":memory:"
+                or path_part.startswith("file:")
+                or "mode=memory" in path_part
+            ):
+                return url
+            anchored = (BACKEND_DIR / path_part).resolve().as_posix()
+            return prefix + anchored
+    return url
+
+
+def resolve_database_url(ini_fallback: str | None = None) -> str:
+    """Single URL resolution shared by the app engine and alembic/env.py (t11.1).
+
+    Priority: DATABASE_URL env var > canonical .env (via Settings, incl. its
+    defaults) > ini_fallback (alembic.ini, isolated tooling scenarios only).
+    """
+    env_url = os.environ.get("DATABASE_URL")
+    if env_url:
+        return normalize_database_url(env_url)
+    try:
+        return get_settings().database_url  # already normalized by the validator
+    except Exception:  # noqa: BLE001 - isolated tooling without the app package
+        pass
+    if ini_fallback:
+        return normalize_database_url(ini_fallback)
+    return normalize_database_url("sqlite:///./alembic-local.db")
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore", case_sensitive=False
+        env_file=canonical_env_file(), env_file_encoding="utf-8", extra="ignore", case_sensitive=False
     )
 
     # --- app ---
@@ -23,6 +86,11 @@ class Settings(BaseSettings):
 
     # --- infrastructure ---
     database_url: str = "postgresql+psycopg://clipper:clipper@localhost:5432/clipper"
+
+    @field_validator("database_url", mode="after")
+    @classmethod
+    def _anchor_sqlite_path(cls, value: str) -> str:
+        return normalize_database_url(value)
     redis_url: str = "redis://localhost:6379/0"
     celery_broker_url: str = ""  # empty => falls back to redis_url
     celery_task_always_eager: bool = False
