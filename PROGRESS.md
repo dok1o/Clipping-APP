@@ -377,6 +377,13 @@ Blockers: нет.
 
 ## CR-1 — REPORT — кампании, термы, деньги, импорт brief (2026-09-23)
 
+**Выравнивание по директиве аудита §14–21** (2026-10-07, отдельный коммит после t11.5):
+- §20 структура: `models/rewards.py`→`models/reward_campaign.py`, `schemas/rewards.py`→`schemas/reward_campaign.py`, `api/v1/rewards.py`→`api/v1/reward_campaigns.py`; `services/rewards/` разделён на `campaign_service.py` (термы/брифы/decide_brief/listing) и `import_service.py` (детерминированный импорт JSON/text/file, ImportOutcome). Чистый refactor — миграция/модели/логика не менялись; все тесты зелёные.
+- §17: добавлены тесты переполнения/точности — cpm_rate с 11 целочисленными цифрами → ValidationError; per_post_amount с 3 знаками после точки или 15 целочисленными цифрами → ValidationError; большие валидные (9999999999.99; cpm 999999.9999) принимаются. Границы зеркалят NUMERIC(10,4)/(14,2).
+- §21: audit-правило `test_no_float_money_in_rewards` — AST-скан float()-кастов и float-аннотаций/параметров по services/rewards/*.py + schemas/reward_campaign.py.
+- §16: `max_payout_per_clip` валидируется `> 0` (строже директивного `>= 0`) — нулевой потолок выплаты бессмысленен при min≤max; осознанное решение, не ослабляется.
+- Сюит после выравнивания: **329 passed, 3 deselected**; `pip check` чист.
+
 Изменения:
 1. **Миграция 0007** (`backend/alembic/versions/0007_reward_campaigns.py`): 4 таблицы — `reward_campaigns`, `campaign_terms_versions` (ЕДИНСТВЕННОЕ хранилище экономических термов), `campaign_brief_versions`, `campaign_source_assets`; циклические FK `current_terms_version_id`/`active_brief_version_id` добавлены batch-ALTER-ом ПОСЛЕ создания зависимых таблиц (нативные ALTER на PostgreSQL, copy-and-move на SQLite), ondelete SET NULL; downgrade удаляет FK-указатели первыми, затем таблицы в обратном порядке.
 2. **Модели** (`backend/app/models/rewards.py`): 4 ORM-класса + relationship'ы; CHECK-ограничения переносимы на обе СУБД: статусы, `payout_model` field-матрица (cpm → cpm_rate NOT NULL и per_post/retainer NULL; per_post → per_post_amount NOT NULL и cpm/retainer NULL; retainer → retainer_amount+retainer_cycle_days NOT NULL и cpm/per_post NULL), `payout_bounds` (max ≥ min), `fee_percent_range` (0..100), `amounts_positive`, `windows_positive`, `version_positive`, brief `source_present`, asset `kind`/`location_present`; uq (provider, external_campaign_id), uq (campaign_id, version) × 2; колонки указателей объявлены последними (порядок == ALTER ADD COLUMN — parity-тест по кортежам колонок).
